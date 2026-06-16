@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { WallDriftChart } from "@/components/WallDriftChart";
 import { SnapshotToolbar, useSnapshotFromUrl } from "@/components/SnapshotToolbar";
-import { SpotTimeline } from "@/components/SpotTimeline";
 import { ChartSkeleton } from "@/components/LoadingSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { PageShell } from "@/components/PageShell";
-import type { SnapshotTimelineRow } from "@/lib/types";
+import type { WallDriftRow } from "@/lib/types";
 
-function TimelineContent() {
+function WallDriftContent() {
   const { marketDate } = useSnapshotFromUrl();
-  const [snapshots, setSnapshots] = useState<SnapshotTimelineRow[]>([]);
+  const [rows, setRows] = useState<WallDriftRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,10 +19,10 @@ function TimelineContent() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/snapshots?market_date=${date}`);
+      const res = await fetch(`/api/wall-drift?market_date=${date}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
-      setSnapshots(data.snapshots ?? []);
+      setRows(data.drift ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Load failed");
     } finally {
@@ -39,9 +39,9 @@ function TimelineContent() {
       <SnapshotToolbar showSnapshot={false} />
       {error ? <div className="error-banner">{error}</div> : null}
       <div className="card">
-        <h2>{marketDate || "Select date"} — Spot &amp; GEX (regime bands)</h2>
-        {loading ? <ChartSkeleton /> : snapshots.length ? (
-          <SpotTimeline snapshots={snapshots} showRegimeBands />
+        <h2>Flip &amp; Walls — {marketDate}</h2>
+        {loading ? <ChartSkeleton /> : rows.length ? (
+          <WallDriftChart rows={rows} />
         ) : (
           <EmptyState />
         )}
@@ -50,14 +50,14 @@ function TimelineContent() {
   );
 }
 
-export default function TimelinePage() {
+export default function WallDriftPage() {
   return (
     <PageShell>
       <div className="page-header">
-        <h1>Intraday Timeline</h1>
-        <p>Spot and total GEX with LONG/SHORT gamma regime shading.</p>
+        <h1>Wall Drift</h1>
+        <p>Gamma flip, call wall, and put wall migration through the session.</p>
       </div>
-      <TimelineContent />
+      <WallDriftContent />
     </PageShell>
   );
 }

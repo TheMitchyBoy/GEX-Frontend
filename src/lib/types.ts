@@ -104,3 +104,69 @@ export interface ProcessorHealth {
   export_age_minutes?: number;
   status?: "ok" | "stale" | "warming" | "degraded";
 }
+
+export interface WallDriftRow {
+  ts: string;
+  spot: number | null;
+  gamma_flip: number | null;
+  call_wall: number | null;
+  put_wall: number | null;
+}
+
+export interface HeatmapCell {
+  ts: string;
+  strike: number;
+  gex_bn_per_pct: number | null;
+  spot: number | null;
+}
+
+export interface TradeRow {
+  id: number;
+  ticker: string;
+  status: string;
+  option_type: string;
+  strike: number;
+  qty: number;
+  entry_ts: string;
+  exit_ts: string | null;
+  entry_spot: number;
+  exit_spot: number | null;
+  entry_premium: number;
+  exit_premium: number | null;
+  pnl_pct: number | null;
+  pnl_usd: number | null;
+  exit_reason: string | null;
+  signal_type: string | null;
+}
+
+export interface DecisionRow {
+  id: number;
+  ts: string;
+  ticker: string;
+  action: string;
+  payload_json: string | null;
+  ai_verdict: string | null;
+  ai_notes: string | null;
+}
+
+export interface LlmPredictionRow {
+  id: number;
+  ticker: string;
+  source: string;
+  snapshot_ts: string | null;
+  market_date: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  payload_json: string;
+  actual_json: string | null;
+  outcome_json: string | null;
+}
+
+export interface DailyInsightRow {
+  ticker: string;
+  market_date: string;
+  kind: string;
+  payload_json: string;
+  created_at: string;
+  updated_at: string;
+}

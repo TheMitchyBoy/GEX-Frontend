@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deriveWalls, getStrikesForSnapshot } from "@/db/queries";
+import { cachedHistoricalJson } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const strikes = await getStrikesForSnapshot(decodedTs);
     const walls = await deriveWalls(strikes);
 
-    return NextResponse.json({
+    return cachedHistoricalJson({
       ts: decodedTs,
       strikes,
       walls,

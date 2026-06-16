@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deriveWalls, getSnapshotSummary, getStrikesForSnapshot } from "@/db/queries";
+import {
+  deriveWalls,
+  getGreeksPaginated,
+  getSnapshotSummary,
+  getStrikesForSnapshot,
+} from "@/db/queries";
+import { cachedHistoricalJson } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ ts: string }> };
 
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { ts } = await context.params;
     const decodedTs = decodeURIComponent(ts);
@@ -19,7 +25,15 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const walls = await deriveWalls(strikes);
     const summary = snapshot.summary_json ?? {};
 
-    return NextResponse.json({
+    const greeksOnly = request.nextUrl.searchParams.get("greeks_only") === "1";
+    if (greeksOnly) {
+      const limit = Number(request.nextUrl.searchParams.get("limit") ?? "100");
+      const offset = Number(request.nextUrl.searchParams.get("offset") ?? "0");
+      const greeks = await getGreeksPaginated(decodedTs, limit, offset);
+      return cachedHistoricalJson({ ts: decodedTs, ...greeks });
+    }
+
+    return cachedHistoricalJson({
       ...snapshot,
       gamma_flip: summary.gamma_flip ?? null,
       walls,

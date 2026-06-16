@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { filterStrikesNearSpot } from "@/lib/strikes";
 import type { StrikeRow } from "@/lib/types";
 
 interface CumulativeGexChartProps {
@@ -27,7 +28,9 @@ export function CumulativeGexChart({
     return <div className="empty-state">No cumulative GEX data.</div>;
   }
 
-  const data = strikes.map((s) => ({
+  const windowed = filterStrikesNearSpot(strikes, spot, 0.05);
+
+  const data = windowed.map((s) => ({
     strike: s.strike,
     cumulative: s.cumulative_gex_bn_per_pct ?? 0,
   }));

@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { GexHeatmap } from "@/components/GexHeatmap";
 import { SnapshotToolbar, useSnapshotFromUrl } from "@/components/SnapshotToolbar";
-import { SpotTimeline } from "@/components/SpotTimeline";
 import { ChartSkeleton } from "@/components/LoadingSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { PageShell } from "@/components/PageShell";
-import type { SnapshotTimelineRow } from "@/lib/types";
+import type { HeatmapCell } from "@/lib/types";
 
-function TimelineContent() {
+function HeatmapContent() {
   const { marketDate } = useSnapshotFromUrl();
-  const [snapshots, setSnapshots] = useState<SnapshotTimelineRow[]>([]);
+  const [cells, setCells] = useState<HeatmapCell[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,10 +19,10 @@ function TimelineContent() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/snapshots?market_date=${date}`);
+      const res = await fetch(`/api/heatmap?market_date=${date}&pct_band=0.03`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
-      setSnapshots(data.snapshots ?? []);
+      setCells(data.cells ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Load failed");
     } finally {
@@ -39,9 +39,12 @@ function TimelineContent() {
       <SnapshotToolbar showSnapshot={false} />
       {error ? <div className="error-banner">{error}</div> : null}
       <div className="card">
-        <h2>{marketDate || "Select date"} — Spot &amp; GEX (regime bands)</h2>
-        {loading ? <ChartSkeleton /> : snapshots.length ? (
-          <SpotTimeline snapshots={snapshots} showRegimeBands />
+        <h2>GEX Heatmap — {marketDate}</h2>
+        <p className="glossary" style={{ marginBottom: "0.75rem" }}>
+          Strike × time ladder (±3% of spot). Green = positive GEX, red = negative.
+        </p>
+        {loading ? <ChartSkeleton /> : cells.length ? (
+          <GexHeatmap cells={cells} />
         ) : (
           <EmptyState />
         )}
@@ -50,14 +53,14 @@ function TimelineContent() {
   );
 }
 
-export default function TimelinePage() {
+export default function HeatmapPage() {
   return (
     <PageShell>
       <div className="page-header">
-        <h1>Intraday Timeline</h1>
-        <p>Spot and total GEX with LONG/SHORT gamma regime shading.</p>
+        <h1>GEX Heatmap</h1>
+        <p>Intraday strike ladder colored by gamma exposure.</p>
       </div>
-      <TimelineContent />
+      <HeatmapContent />
     </PageShell>
   );
 }

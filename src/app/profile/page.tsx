@@ -2,19 +2,24 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { GexProfileChart } from "@/components/GexProfileChart";
-import { SnapshotPicker } from "@/components/SnapshotPicker";
+import { SnapshotToolbar, useSnapshotFromUrl } from "@/components/SnapshotToolbar";
+import { ChartSkeleton } from "@/components/LoadingSkeleton";
+import { EmptyState } from "@/components/EmptyState";
+import { PageShell } from "@/components/PageShell";
 import { formatTsLabel } from "@/lib/time";
 import type { StrikeRow, Walls } from "@/lib/types";
 
-export default function ProfilePage() {
-  const [ts, setTs] = useState("");
+function ProfileContent() {
+  const { ts } = useSnapshotFromUrl();
   const [strikes, setStrikes] = useState<StrikeRow[]>([]);
   const [spot, setSpot] = useState<number | null>(null);
   const [walls, setWalls] = useState<Walls>({ call_wall: null, put_wall: null });
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadStrikes = useCallback(async (snapshotTs: string) => {
+  const load = useCallback(async (snapshotTs: string) => {
     if (!snapshotTs) return;
+    setLoading(true);
     setError(null);
     try {
       const [strikesRes, summaryRes] = await Promise.all([
@@ -23,46 +28,50 @@ export default function ProfilePage() {
       ]);
       const strikesData = await strikesRes.json();
       const summaryData = await summaryRes.json();
-      if (!strikesRes.ok) throw new Error(strikesData.error ?? "Failed to load strikes");
+      if (!strikesRes.ok) throw new Error(strikesData.error ?? "Failed to load");
       setStrikes(strikesData.strikes ?? []);
       setWalls(strikesData.walls ?? { call_wall: null, put_wall: null });
       setSpot(summaryData.spot ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Load failed");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (ts) loadStrikes(ts);
-  }, [ts, loadStrikes]);
+    if (ts) load(ts);
+  }, [ts, load]);
 
   return (
     <>
-      <div className="page-header">
-        <h1>GEX Profile</h1>
-        <p>Per-strike gamma exposure bar chart with call/put walls.</p>
-      </div>
-
-      <SnapshotPicker value={ts} onChange={setTs} />
-
+      <SnapshotToolbar />
       {error ? <div className="error-banner">{error}</div> : null}
-
       {ts ? (
         <p className="glossary" style={{ marginBottom: "1rem" }}>
-          {formatTsLabel(ts)} ET · Call wall {walls.call_wall ?? "—"} · Put wall{" "}
-          {walls.put_wall ?? "—"}
+          {formatTsLabel(ts)} ET · Call wall {walls.call_wall ?? "—"} · Put wall {walls.put_wall ?? "—"}
         </p>
       ) : null}
-
       <div className="card">
         <h2>Strike vs GEX (Bn$/1%)</h2>
-        <GexProfileChart
-          strikes={strikes}
-          spot={spot}
-          callWall={walls.call_wall}
-          putWall={walls.put_wall}
-        />
+        {loading ? <ChartSkeleton /> : strikes.length ? (
+          <GexProfileChart strikes={strikes} spot={spot} callWall={walls.call_wall} putWall={walls.put_wall} />
+        ) : (
+          <EmptyState message="Select a snapshot to view the GEX profile." showHealthLink={false} />
+        )}
       </div>
     </>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <PageShell>
+      <div className="page-header">
+        <h1>GEX Profile</h1>
+        <p>Per-strike gamma exposure with call/put walls (±3% of spot).</p>
+      </div>
+      <ProfileContent />
+    </PageShell>
   );
 }

@@ -1,12 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { DatePicker } from "@/components/SnapshotPicker";
+import Link from "next/link";
+import { SnapshotToolbar, useSnapshotFromUrl } from "@/components/SnapshotToolbar";
+import { PageShell } from "@/components/PageShell";
+import { EmptyState } from "@/components/EmptyState";
+import { buildSnapshotHref } from "@/lib/snapshot-url";
 import { formatGex, formatNumber, formatTsLabel } from "@/lib/time";
 import type { SnapshotTimelineRow } from "@/lib/types";
 
-export default function HistoryPage() {
-  const [marketDate, setMarketDate] = useState("");
+function HistoryContent() {
+  const { marketDate } = useSnapshotFromUrl();
   const [snapshots, setSnapshots] = useState<SnapshotTimelineRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,7 +20,7 @@ export default function HistoryPage() {
     try {
       const res = await fetch(`/api/snapshots?market_date=${date}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load");
+      if (!res.ok) throw new Error(data.error ?? "Failed");
       setSnapshots(data.snapshots ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Load failed");
@@ -29,16 +33,13 @@ export default function HistoryPage() {
 
   return (
     <>
-      <div className="page-header">
-        <h1>History Browser</h1>
-        <p>Browse intraday snapshot slices by trading day.</p>
-      </div>
-
-      <DatePicker value={marketDate} onChange={setMarketDate} />
+      <SnapshotToolbar showSnapshot={false} />
       {error ? <div className="error-banner">{error}</div> : null}
-
       <div className="card">
         <h2>Snapshots — {marketDate || "select date"}</h2>
+        <p className="glossary" style={{ marginBottom: "0.75rem" }}>
+          Click a row to open GEX profile for that slice.
+        </p>
         <div className="table-wrap">
           <table className="data-table">
             <thead>
@@ -48,25 +49,45 @@ export default function HistoryPage() {
                 <th>Total GEX</th>
                 <th>Regime</th>
                 <th>Gamma Flip</th>
+                <th>Links</th>
               </tr>
             </thead>
             <tbody>
               {snapshots.map((s) => (
-                <tr key={s.ts}>
+                <tr key={s.ts} className="clickable">
                   <td>{formatTsLabel(s.ts)}</td>
                   <td>{formatNumber(s.spot, 2)}</td>
                   <td>{formatGex(s.total_gex)}</td>
                   <td>{s.regime ?? "—"}</td>
                   <td>{s.gamma_flip ?? "—"}</td>
+                  <td>
+                    <Link href={buildSnapshotHref("/profile", { marketDate, ts: s.ts })} className="text-link">
+                      Profile
+                    </Link>
+                    {" · "}
+                    <Link href={buildSnapshotHref("/cumulative", { marketDate, ts: s.ts })} className="text-link">
+                      Cumulative
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!snapshots.length ? (
-            <div className="empty-state">No snapshots for this date.</div>
-          ) : null}
+          {!snapshots.length ? <EmptyState /> : null}
         </div>
       </div>
     </>
+  );
+}
+
+export default function HistoryPage() {
+  return (
+    <PageShell>
+      <div className="page-header">
+        <h1>History Browser</h1>
+        <p>Browse intraday slices with deep links to charts.</p>
+      </div>
+      <HistoryContent />
+    </PageShell>
   );
 }
