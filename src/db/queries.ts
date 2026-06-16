@@ -12,21 +12,31 @@ import { TICKER } from "@/lib/types";
 
 let pool: Pool | null = null;
 
-function getPool(): Pool {
+function resolveSsl(connectionString: string): false | { rejectUnauthorized: boolean } {
+  // Railway private network does not use TLS — forcing SSL breaks internal URLs.
+  if (connectionString.includes(".railway.internal")) {
+    return false;
+  }
+  if (
+    connectionString.includes("sslmode=require") ||
+    connectionString.includes("ssl=true") ||
+    connectionString.includes("proxy.rlwy.net")
+  ) {
+    return { rejectUnauthorized: false };
+  }
+  return false;
+}
+
+function getPool(): Pool | null {
   if (!pool) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
-      throw new Error("DATABASE_URL is not set");
+      return null;
     }
-
-    const useSsl =
-      connectionString.includes("railway") ||
-      connectionString.includes("sslmode=require") ||
-      process.env.NODE_ENV === "production";
 
     pool = new Pool({
       connectionString,
-      ssl: useSsl ? { rejectUnauthorized: false } : undefined,
+      ssl: resolveSsl(connectionString),
       max: 10,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
@@ -39,7 +49,11 @@ async function query<T extends QueryResultRow>(
   text: string,
   params?: unknown[],
 ): Promise<T[]> {
-  const result = await getPool().query<T>(text, params);
+  const db = getPool();
+  if (!db) {
+    throw new Error("DATABASE_URL is not set");
+  }
+  const result = await db.query<T>(text, params);
   return result.rows;
 }
 
@@ -138,7 +152,12 @@ export async function getMultiDaySeries(limit = 500): Promise<SnapshotBrief[]> {
 export async function getFreshness(): Promise<FreshnessInfo | null> {
   const rows = await query<FreshnessInfo>(
     `SELECT ts, indexed_at,
-            EXTRACT(EPOCH FROM (NOW() - indexed_at::timestamptz)) / 60 AS age_minutes
+            CASE
+              WHEN indexed_at IS NOT NULL
+                AND indexed_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+              THEN EXTRACT(EPOCH FROM (NOW() - indexed_at::timestamptz)) / 60
+              ELSE NULL
+            END AS age_minutes
      FROM snapshots
      WHERE ticker = $1
      ORDER BY ts DESC
@@ -185,7 +204,9 @@ export async function deriveWalls(strikes: StrikeRow[]): Promise<Walls> {
 
 export async function checkDbConnection(): Promise<boolean> {
   try {
-    await getPool().query("SELECT 1");
+    const db = getPool();
+    if (!db) return false;
+    await db.query("SELECT 1");
     return true;
   } catch {
     return false;
