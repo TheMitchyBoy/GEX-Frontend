@@ -8,6 +8,7 @@ import type {
   HeatmapCell,
   LlmPredictionRow,
   PredictionAccuracyRow,
+  ProcessorStateRow,
   Snapshot,
   SnapshotBrief,
   SnapshotDiagnostics,
@@ -18,6 +19,7 @@ import type {
   StrikeRow,
   SummaryJson,
   TradeRow,
+  TrainingSnapshotRow,
   WallDriftRow,
   Walls,
 } from "@/lib/types";
@@ -595,6 +597,43 @@ export async function getDailyInsights(
     [TICKER, limit],
     "getDailyInsights",
   );
+}
+
+export async function getTrainingSnapshots(limit = 50): Promise<TrainingSnapshotRow[]> {
+  return queryOptional<TrainingSnapshotRow>(
+    `SELECT ticker, ts, market_date, spot, total_gex, regime,
+            snapshot_at::text AS snapshot_at, quality_score, flip_confidence,
+            regime_consistent, strike_count, delta_gex, spot_return,
+            diagnostic_status
+     FROM training_snapshots
+     WHERE ticker = $1
+     ORDER BY ts DESC
+     LIMIT $2`,
+    [TICKER, limit],
+    "getTrainingSnapshots",
+  );
+}
+
+export async function getProcessorState(): Promise<ProcessorStateRow[]> {
+  return queryOptional<ProcessorStateRow>(
+    `SELECT key, value, updated_at
+     FROM processor_state
+     ORDER BY key ASC`,
+    [],
+    "getProcessorState",
+  );
+}
+
+export async function getSurfaceForSnapshot(
+  ts: string,
+): Promise<Record<string, unknown>[]> {
+  const rows = await query<{ surface_json: Record<string, unknown>[] | null }>(
+    `SELECT surface_json FROM snapshots WHERE ticker = $1 AND ts = $2`,
+    [TICKER, ts],
+    "getSurfaceForSnapshot",
+  );
+  const surface = rows[0]?.surface_json;
+  return Array.isArray(surface) ? surface : [];
 }
 
 export async function checkDbConnection(): Promise<boolean> {

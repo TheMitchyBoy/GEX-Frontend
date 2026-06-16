@@ -248,3 +248,26 @@ export interface DailyInsightRow {
   created_at: string;
   updated_at: string;
 }
+
+export interface TrainingSnapshotRow {
+  ticker: string;
+  ts: string;
+  market_date: string | null;
+  spot: number | null;
+  total_gex: number | null;
+  regime: string | null;
+  snapshot_at: string | null;
+  quality_score: number | null;
+  flip_confidence: string | null;
+  regime_consistent: boolean | null;
+  strike_count: number | null;
+  delta_gex: number | null;
+  spot_return: number | null;
+  diagnostic_status: string | null;
+}
+
+export interface ProcessorStateRow {
+  key: string;
+  value: string;
+  updated_at: string;
+}

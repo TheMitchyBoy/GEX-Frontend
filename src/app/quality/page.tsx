@@ -6,13 +6,21 @@ import { PageShell } from "@/components/PageShell";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { formatNumber } from "@/lib/time";
-import type { DailyQualityRow, PredictionAccuracyRow } from "@/lib/types";
+import type { DailyQualityRow, PredictionAccuracyRow, ProcessorStateRow } from "@/lib/types";
 
 function QualityContent() {
   const { marketDate } = useSnapshotFromUrl();
   const [quality, setQuality] = useState<DailyQualityRow[]>([]);
   const [accuracy, setAccuracy] = useState<PredictionAccuracyRow[]>([]);
+  const [processorState, setProcessorState] = useState<ProcessorStateRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/processor-state")
+      .then((r) => r.json())
+      .then((data) => setProcessorState(data.state ?? []))
+      .catch(() => setProcessorState([]));
+  }, []);
 
   const load = useCallback(async (date: string) => {
     if (!date) return;
@@ -70,6 +78,20 @@ function QualityContent() {
           )}
         </div>
       </div>
+
+      {processorState.length ? (
+        <div className="card" style={{ marginTop: "1rem" }}>
+          <h2>Processor State</h2>
+          <dl className="metric-list">
+            {processorState.map((row) => (
+              <div key={row.key} style={{ display: "contents" }}>
+                <dt>{row.key}</dt>
+                <dd>{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
     </>
   );
 }

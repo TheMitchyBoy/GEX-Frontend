@@ -14,6 +14,9 @@ Read-only SPX gamma exposure dashboard querying Railway PostgreSQL populated by 
 | `snapshot_diagnostics` | Write pipeline status and timing |
 | `daily_quality_stats` | Per-day quality rollups |
 | `prediction_accuracy_daily` | LLM prediction accuracy rollups |
+| `training_snapshots` | View — high-quality training slices |
+| `processor_state` | Backfill cursors and processor flags |
+| `surface_json` | On `snapshots` — expiration/strike surface rows |
 | `trades`, `decisions`, `llm_predictions`, `daily_insights` | Optional journal tables |
 
 Walls and gamma flip prefer `snapshot_features` over client-side derivation.
@@ -29,7 +32,9 @@ Walls and gamma flip prefer `snapshot_features` over client-side derivation.
 | Heatmap | `/heatmap` | ATM strike × time ladder |
 | Wall Drift | `/wall-drift` | Flip/walls from `snapshot_features` |
 | History | `/history` | Table with quality + diagnostic status |
-| Quality | `/quality` | Daily quality + prediction accuracy |
+| Quality | `/quality` | Daily quality + prediction accuracy + processor_state |
+| Training | `/training` | `training_snapshots` view |
+| Surface | `/surface` | `snapshots.surface_json` table |
 | Term Structure / Greeks / Trades / etc. | | See nav |
 
 ## Environment
@@ -55,7 +60,9 @@ BASIC_AUTH_PASSWORD=
 | `GET /api/snapshots/:ts/diagnostics` | `snapshot_diagnostics` row |
 | `GET /api/snapshots/:ts/strikes?source=atm\|full\|auto` | Strike profile |
 | `GET /api/quality?market_date=` | `daily_quality_stats` |
-| `GET /api/prediction-accuracy?market_date=` | `prediction_accuracy_daily` |
+| `GET /api/training?limit=` | `training_snapshots` view |
+| `GET /api/processor-state` | `processor_state` table |
+| `GET /api/snapshots/:ts/surface` | `surface_json` rows |
 
 Legacy databases without new tables fall back to `snapshots` + `snapshot_strikes` only.
 

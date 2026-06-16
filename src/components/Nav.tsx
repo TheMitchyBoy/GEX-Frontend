@@ -23,6 +23,7 @@ const sections = [
       { href: "/heatmap", label: "Heatmap" },
       { href: "/wall-drift", label: "Walls" },
       { href: "/term-structure", label: "Term" },
+      { href: "/surface", label: "Surface" },
       { href: "/greeks", label: "Greeks" },
     ],
   },
@@ -30,6 +31,7 @@ const sections = [
     label: "Journal",
     links: [
       { href: "/quality", label: "Quality" },
+      { href: "/training", label: "Training" },
       { href: "/trades", label: "Trades" },
       { href: "/decisions", label: "Decisions" },
       { href: "/llm-predictions", label: "LLM" },

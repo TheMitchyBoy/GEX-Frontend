@@ -35,6 +35,8 @@ interface LatestPayload {
   is_fomc_week?: number;
   is_cpi_day?: number;
   is_nfp_day?: number;
+  prior_ts?: string | null;
+  snapshot_at?: string | null;
   features?: SnapshotFeatures | null;
   diagnostics?: SnapshotDiagnostics | null;
   quality_score?: number | null;
@@ -126,6 +128,12 @@ export function OverviewClient({
           indexed {data.indexed_at ?? "—"}
           {freshnessMin != null ? ` · ${formatNumber(freshnessMin, 1)}m ago` : ""}
         </span>
+        {data.prior_ts ? (
+          <span className="meta">prior {data.prior_ts}</span>
+        ) : null}
+        {data.features?.flip_confidence ? (
+          <span className="meta">flip {data.features.flip_confidence}</span>
+        ) : null}
         {data.quality_score != null ? (
           <span className="meta">
             quality {formatNumber(data.quality_score * 100, 0)}%
