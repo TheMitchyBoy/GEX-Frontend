@@ -109,27 +109,34 @@ export function OverviewClient({
 
   return (
     <>
-      <div className="select-row" style={{ marginBottom: "1rem" }}>
+      <div className="status-strip">
         <span className={`badge ${status}`}>{status.toUpperCase()}</span>
-        <span className="glossary">
-          Snapshot {formatTsLabel(data.ts)} ET · indexed {data.indexed_at ?? "—"}
-          {freshnessMin != null ? ` · ${formatNumber(freshnessMin, 1)} min ago` : ""}
-          {lastRefresh ? ` · refreshed ${lastRefresh.toLocaleTimeString()}` : ""}
+        <span className="meta">
+          {formatTsLabel(data.ts)} ET
         </span>
+        <span className="meta">
+          indexed {data.indexed_at ?? "—"}
+          {freshnessMin != null ? ` · ${formatNumber(freshnessMin, 1)}m ago` : ""}
+        </span>
+        {lastRefresh ? (
+          <span className="meta">↻ {lastRefresh.toLocaleTimeString()}</span>
+        ) : null}
       </div>
 
       <MacroBadges summary={summary} />
 
-      <div className="grid grid-4" style={{ marginBottom: "1rem" }}>
-        <StatCard label="Spot" value={formatSpot(data.spot)} sub={data.market_date ?? undefined} tooltip={TOOLTIPS.spot} />
-        <StatCard label="Total GEX" value={formatGexValue(data.total_gex)} regime={data.regime} tooltip={TOOLTIPS.totalGex} />
-        <StatCard label="Regime" value={data.regime ?? "—"} regime={data.regime} tooltip={TOOLTIPS.regime} />
-        <StatCard label="Gamma Flip" value={formatSpot(data.gamma_flip)} tooltip={TOOLTIPS.gammaFlip} />
+      <p className="section-title">Key levels</p>
+      <div className="grid grid-4" style={{ marginBottom: "1.25rem" }}>
+        <StatCard label="Spot" value={formatSpot(data.spot)} sub={data.market_date ?? undefined} tooltip={TOOLTIPS.spot} accent="spot" icon="◎" />
+        <StatCard label="Total GEX" value={formatGexValue(data.total_gex)} regime={data.regime} tooltip={TOOLTIPS.totalGex} accent="gex" icon="Γ" />
+        <StatCard label="Regime" value={data.regime ?? "—"} regime={data.regime} tooltip={TOOLTIPS.regime} accent="regime" icon="⇄" />
+        <StatCard label="Gamma Flip" value={formatSpot(data.gamma_flip)} tooltip={TOOLTIPS.gammaFlip} accent="flip" icon="⊘" />
       </div>
 
-      <div className="grid grid-4" style={{ marginBottom: "1rem" }}>
-        <StatCard label="Call Wall" value={formatSpot(walls.call_wall)} tooltip={TOOLTIPS.callWall} />
-        <StatCard label="Put Wall" value={formatSpot(walls.put_wall)} tooltip={TOOLTIPS.putWall} />
+      <p className="section-title">Walls &amp; volatility</p>
+      <div className="grid grid-4" style={{ marginBottom: "1.25rem" }}>
+        <StatCard label="Call Wall" value={formatSpot(walls.call_wall)} tooltip={TOOLTIPS.callWall} accent="call" icon="▲" />
+        <StatCard label="Put Wall" value={formatSpot(walls.put_wall)} tooltip={TOOLTIPS.putWall} accent="put" icon="▼" />
         <StatCard
           label="VIX"
           value={formatNumber((data.vix_level ?? summary.vix_level) as number | undefined, 2)}
@@ -139,6 +146,8 @@ export function OverviewClient({
               : undefined
           }
           tooltip={TOOLTIPS.vix}
+          accent="vix"
+          icon="V"
         />
         <StatCard
           label="IV Rank"
@@ -153,6 +162,8 @@ export function OverviewClient({
               : undefined
           }
           tooltip={TOOLTIPS.ivRank}
+          accent="iv"
+          icon="%"
         />
       </div>
 

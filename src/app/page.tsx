@@ -6,6 +6,7 @@ import {
   getStrikesForSnapshot,
 } from "@/db/queries";
 import { OverviewClient } from "@/components/OverviewClient";
+import { PageHeader } from "@/components/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -54,10 +55,11 @@ export default async function OverviewPage() {
 
   return (
     <>
-      <div className="page-header">
-        <h1>Live Overview</h1>
-        <p>Latest SPX gamma exposure snapshot — auto-refreshes every 90s.</p>
-      </div>
+      <PageHeader
+        title="Live Overview"
+        description="Latest SPX gamma exposure — auto-refreshes every 90 seconds."
+        badge="SPX"
+      />
       <OverviewClient
         initial={initial}
         initialHistory={history}

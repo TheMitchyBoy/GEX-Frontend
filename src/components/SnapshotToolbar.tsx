@@ -70,7 +70,7 @@ export function SnapshotToolbar({
   }, [marketDate, ts, updateParams]);
 
   return (
-    <div className="snapshot-toolbar">
+    <div className="filter-panel">
       {showDate ? (
         <div className="select-row">
           <label htmlFor="toolbar-date">Trading day</label>

@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { filterStrikesNearSpot } from "@/lib/strikes";
+import { CHART, chartTooltipStyle } from "@/lib/chart-theme";
 import type { StrikeRow } from "@/lib/types";
 
 interface GexProfileChartProps {
@@ -52,34 +53,26 @@ export function GexProfileChart({
       <div className="chart-wrap tall">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#243041" />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
             <XAxis
               dataKey="strike"
-              tick={{ fill: "#8b9bb0", fontSize: 11 }}
+              tick={{ fill: CHART.axis, fontSize: 11 }}
               tickFormatter={(v) => String(Math.round(v))}
               interval="preserveStartEnd"
             />
             <YAxis
-              tick={{ fill: "#8b9bb0", fontSize: 11 }}
+              tick={{ fill: CHART.axis, fontSize: 11 }}
               tickFormatter={(v) => `${Number(v).toFixed(2)}`}
             />
-            <Tooltip
-              contentStyle={{
-                background: "#161d27",
-                border: "1px solid #243041",
-                borderRadius: 8,
-              }}
-              formatter={(value: number) => [`${value.toFixed(4)} Bn$/1%`, "GEX"]}
-              labelFormatter={(label) => `Strike ${label}`}
-            />
-            {spot != null ? (
-              <ReferenceLine x={spot} stroke="#3b82f6" strokeDasharray="4 4" label="Spot" />
+          <Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => [`${value.toFixed(4)} Bn$/1%`, "GEX"]} labelFormatter={(label) => `Strike ${label}`} />
+          {spot != null ? (
+            <ReferenceLine x={spot} stroke={CHART.spot} strokeDasharray="4 4" label={{ value: "Spot", fill: CHART.spot, fontSize: 10 }} />
             ) : null}
             <Bar dataKey="gex" radius={[2, 2, 0, 0]}>
               {data.map((entry, index) => {
-                let fill = entry.gex >= 0 ? "#22c55e" : "#ef4444";
-                if (entry.isCallWall) fill = "#f59e0b";
-                if (entry.isPutWall) fill = "#a855f7";
+              let fill: string = entry.gex >= 0 ? CHART.long : CHART.short;
+              if (entry.isCallWall) fill = CHART.callWall;
+              if (entry.isPutWall) fill = CHART.putWall;
                 return <Cell key={`cell-${index}`} fill={fill} />;
               })}
             </Bar>

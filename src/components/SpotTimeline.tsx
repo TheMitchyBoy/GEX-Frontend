@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CHART, chartTooltipStyle } from "@/lib/chart-theme";
 import { formatTsShort } from "@/lib/time";
 import type { SnapshotTimelineRow } from "@/lib/types";
 
@@ -21,9 +22,7 @@ interface SpotTimelineProps {
 
 function regimeColor(regime: string | null | undefined): string {
   if (!regime) return "transparent";
-  return regime.toLowerCase().includes("long")
-    ? "rgba(34, 197, 94, 0.08)"
-    : "rgba(239, 68, 68, 0.08)";
+  return regime.toLowerCase().includes("long") ? CHART.long + "14" : CHART.short + "14";
 }
 
 export function SpotTimeline({ snapshots, showRegimeBands = true }: SpotTimelineProps) {
@@ -55,34 +54,24 @@ export function SpotTimeline({ snapshots, showRegimeBands = true }: SpotTimeline
     <div className="chart-wrap tall">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 10, right: 50, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#243041" />
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
           {regimeBands.map((band, i) => (
-            <ReferenceArea
-              key={i}
-              x1={band.x1}
-              x2={band.x2}
-              fill={band.fill}
-              strokeOpacity={0}
-            />
+            <ReferenceArea key={i} x1={band.x1} x2={band.x2} fill={band.fill} strokeOpacity={0} />
           ))}
-          <XAxis dataKey="label" tick={{ fill: "#8b9bb0", fontSize: 11 }} />
-          <YAxis yAxisId="spot" tick={{ fill: "#8b9bb0", fontSize: 11 }} domain={["auto", "auto"]} />
-          <YAxis yAxisId="gex" orientation="right" tick={{ fill: "#8b9bb0", fontSize: 11 }} />
+          <XAxis dataKey="label" tick={{ fill: CHART.axis, fontSize: 11 }} />
+          <YAxis yAxisId="spot" tick={{ fill: CHART.axis, fontSize: 11 }} domain={["auto", "auto"]} />
+          <YAxis yAxisId="gex" orientation="right" tick={{ fill: CHART.axis, fontSize: 11 }} />
           <Tooltip
-            contentStyle={{
-              background: "#161d27",
-              border: "1px solid #243041",
-              borderRadius: 8,
-            }}
+            contentStyle={chartTooltipStyle}
             labelFormatter={(_, payload) => {
               const row = payload?.[0]?.payload;
               const regime = row?.regime ? ` · ${row.regime}` : "";
               return row?.ts ? `${formatTsShort(row.ts)} ET${regime}` : "";
             }}
           />
-          <Legend />
-          <Line yAxisId="spot" type="monotone" dataKey="spot" name="Spot" stroke="#3b82f6" strokeWidth={2} dot={false} />
-          <Line yAxisId="gex" type="monotone" dataKey="total_gex" name="Total GEX (Bn$/1%)" stroke="#f59e0b" strokeWidth={2} dot={false} />
+          <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+          <Line yAxisId="spot" type="monotone" dataKey="spot" name="Spot" stroke={CHART.spot} strokeWidth={2} dot={false} />
+          <Line yAxisId="gex" type="monotone" dataKey="total_gex" name="GEX (Bn$/1%)" stroke={CHART.gex} strokeWidth={2} dot={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -90,11 +79,7 @@ export function SpotTimeline({ snapshots, showRegimeBands = true }: SpotTimeline
 }
 
 interface MultiDayChartProps {
-  snapshots: Array<{
-    ts: string;
-    spot: number | null;
-    total_gex: number | null;
-  }>;
+  snapshots: Array<{ ts: string; spot: number | null; total_gex: number | null }>;
 }
 
 export function MultiDayChart({ snapshots }: MultiDayChartProps) {
@@ -113,20 +98,14 @@ export function MultiDayChart({ snapshots }: MultiDayChartProps) {
     <div className="chart-wrap">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 10, right: 50, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#243041" />
-          <XAxis dataKey="label" tick={{ fill: "#8b9bb0", fontSize: 10 }} hide />
-          <YAxis yAxisId="spot" tick={{ fill: "#8b9bb0", fontSize: 11 }} />
-          <YAxis yAxisId="gex" orientation="right" tick={{ fill: "#8b9bb0", fontSize: 11 }} />
-          <Tooltip
-            contentStyle={{
-              background: "#161d27",
-              border: "1px solid #243041",
-              borderRadius: 8,
-            }}
-          />
-          <Legend />
-          <Line yAxisId="spot" type="monotone" dataKey="spot" name="Spot" stroke="#3b82f6" dot={false} />
-          <Line yAxisId="gex" type="monotone" dataKey="total_gex" name="GEX" stroke="#f59e0b" dot={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
+          <XAxis dataKey="label" tick={{ fill: CHART.axis, fontSize: 10 }} hide />
+          <YAxis yAxisId="spot" tick={{ fill: CHART.axis, fontSize: 11 }} />
+          <YAxis yAxisId="gex" orientation="right" tick={{ fill: CHART.axis, fontSize: 11 }} />
+          <Tooltip contentStyle={chartTooltipStyle} />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Line yAxisId="spot" type="monotone" dataKey="spot" name="Spot" stroke={CHART.spot} dot={false} strokeWidth={2} />
+          <Line yAxisId="gex" type="monotone" dataKey="total_gex" name="GEX" stroke={CHART.gex} dot={false} strokeWidth={2} />
         </LineChart>
       </ResponsiveContainer>
     </div>

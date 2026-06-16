@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CHART, chartTooltipStyle } from "@/lib/chart-theme";
 import { filterStrikesNearSpot } from "@/lib/strikes";
 import type { StrikeRow } from "@/lib/types";
 
@@ -29,7 +30,6 @@ export function CumulativeGexChart({
   }
 
   const windowed = filterStrikesNearSpot(strikes, spot, 0.05);
-
   const data = windowed.map((s) => ({
     strike: s.strike,
     cumulative: s.cumulative_gex_bn_per_pct ?? 0,
@@ -39,42 +39,32 @@ export function CumulativeGexChart({
     <div className="chart-wrap tall">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#243041" />
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
           <XAxis
             dataKey="strike"
-            tick={{ fill: "#8b9bb0", fontSize: 11 }}
+            tick={{ fill: CHART.axis, fontSize: 11 }}
             tickFormatter={(v) => String(Math.round(v))}
             interval="preserveStartEnd"
           />
-          <YAxis tick={{ fill: "#8b9bb0", fontSize: 11 }} />
+          <YAxis tick={{ fill: CHART.axis, fontSize: 11 }} />
           <Tooltip
-            contentStyle={{
-              background: "#161d27",
-              border: "1px solid #243041",
-              borderRadius: 8,
-            }}
+            contentStyle={chartTooltipStyle}
             formatter={(value: number) => [`${value.toFixed(4)} Bn$/1%`, "Cumulative GEX"]}
             labelFormatter={(label) => `Strike ${label}`}
           />
-          <ReferenceLine y={0} stroke="#64748b" />
+          <ReferenceLine y={0} stroke={CHART.axis} strokeOpacity={0.5} />
           {gammaFlip != null ? (
             <ReferenceLine
               x={gammaFlip}
-              stroke="#06b6d4"
+              stroke={CHART.flip}
               strokeDasharray="4 4"
-              label={{ value: "Gamma flip", fill: "#06b6d4", fontSize: 11 }}
+              label={{ value: "Flip", fill: CHART.flip, fontSize: 10 }}
             />
           ) : null}
           {spot != null ? (
-            <ReferenceLine x={spot} stroke="#3b82f6" strokeDasharray="4 4" />
+            <ReferenceLine x={spot} stroke={CHART.spot} strokeDasharray="4 4" />
           ) : null}
-          <Line
-            type="monotone"
-            dataKey="cumulative"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            dot={false}
-          />
+          <Line type="monotone" dataKey="cumulative" stroke={CHART.accent} strokeWidth={2} dot={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>

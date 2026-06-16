@@ -5,6 +5,7 @@ import { GexProfileChart } from "@/components/GexProfileChart";
 import { SnapshotToolbar, useSnapshotFromUrl } from "@/components/SnapshotToolbar";
 import { ChartSkeleton } from "@/components/LoadingSkeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 import { formatTsLabel } from "@/lib/time";
 import type { StrikeRow, Walls } from "@/lib/types";
@@ -67,10 +68,7 @@ function ProfileContent() {
 export default function ProfilePage() {
   return (
     <PageShell>
-      <div className="page-header">
-        <h1>GEX Profile</h1>
-        <p>Per-strike gamma exposure with call/put walls (±3% of spot).</p>
-      </div>
+      <PageHeader title="GEX Profile" description="Per-strike gamma exposure with call/put walls (±3% of spot)." />
       <ProfileContent />
     </PageShell>
   );

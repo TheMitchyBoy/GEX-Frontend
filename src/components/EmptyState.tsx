@@ -13,14 +13,17 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div className="empty-state">
-      <p style={{ fontWeight: 600, color: "var(--text)", marginBottom: "0.5rem" }}>{title}</p>
-      <p>{message}</p>
+      <div className="empty-icon" aria-hidden>
+        ◌
+      </div>
+      <p className="empty-title">{title}</p>
+      <p className="empty-message">{message}</p>
       {showHealthLink ? (
-        <p style={{ marginTop: "1rem" }}>
+        <p className="empty-action">
           <Link href="/api/health" className="text-link">
             Check /api/health
           </Link>
-          {" — is the processor running?"}
+          <span> — is the processor running?</span>
         </p>
       ) : null}
     </div>
