@@ -1,5 +1,4 @@
 import {
-  gammaFlipFrom,
   getEnrichedSnapshot,
   getFreshness,
   getLatestSnapshot,
