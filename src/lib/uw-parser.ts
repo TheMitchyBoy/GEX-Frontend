@@ -31,30 +31,131 @@ export function unwrapUwRows(raw: unknown): Record<string, unknown>[] {
   }
   if (raw && typeof raw === "object") {
     const obj = raw as Record<string, unknown>;
-    for (const key of ["data", "rows", "results"]) {
+    for (const key of ["data", "rows", "results", "items", "payload"]) {
       const val = obj[key];
       if (Array.isArray(val)) {
         return val.filter((row): row is Record<string, unknown> => !!row && typeof row === "object");
       }
     }
+    if (obj.strike != null || obj.price != null || obj.time != null) {
+      return [obj];
+    }
   }
   return [];
 }
 
+export type EndpointKind = "strike" | "intraday" | "expiration" | "history" | "other";
+
+export function normalizeEndpoint(endpoint: string): string {
+  return endpoint
+    .toLowerCase()
+    .replace(/^https?:\/\/[^/]+/i, "")
+    .replace(/^\/api\/stock\/[^/]+\//i, "")
+    .replace(/^\//, "");
+}
+
+export function classifyEndpoint(endpoint: string): EndpointKind {
+  const ep = normalizeEndpoint(endpoint);
+  if (ep.includes("greek-exposure") && (ep.includes("expir") || ep.includes("expiry"))) {
+    return "expiration";
+  }
+  if (ep.includes("/strike") || ep.endsWith("strike")) return "strike";
+  if (ep.includes("spot-exposures") && !ep.includes("/strike")) return "intraday";
+  if (ep === "greek-exposure" || ep.includes("history")) return "history";
+  return "other";
+}
+
 export function isStrikeEndpoint(endpoint: string): boolean {
-  const ep = endpoint.toLowerCase();
-  return ep.includes("spot-exposures/strike") || ep.includes("greek-exposure/strike");
+  return classifyEndpoint(endpoint) === "strike";
 }
 
 export function isIntradayEndpoint(endpoint: string): boolean {
-  const ep = endpoint.toLowerCase();
-  return ep.includes("spot-exposures") && !ep.includes("/strike");
+  return classifyEndpoint(endpoint) === "intraday";
+}
+
+export function isExpirationEndpoint(endpoint: string): boolean {
+  return classifyEndpoint(endpoint) === "expiration";
+}
+
+export function inspectRawJson(
+  raw: unknown,
+  endpoint: string,
+): {
+  row_count: number;
+  keys: string[];
+  kind: EndpointKind;
+  strike_rows: number;
+  parseable: boolean;
+} {
+  const rows = unwrapUwRows(raw);
+  const keys = rows.length
+    ? Array.from(
+        rows.slice(0, 20).reduce((set, row) => {
+          Object.keys(row).forEach((k) => set.add(k));
+          return set;
+        }, new Set<string>()),
+      )
+    : [];
+  const strikeRows = rows.filter((r) => r.strike != null).length;
+  const kind = classifyEndpoint(endpoint);
+  const parseable =
+    kind === "strike"
+      ? strikeRows > 0
+      : kind === "intraday"
+        ? rows.some((r) => r.time != null || r.price != null)
+        : rows.length > 0;
+  return { row_count: rows.length, keys, kind, strike_rows: strikeRows, parseable };
 }
 
 function num(value: unknown): number | null {
   if (value == null || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function intradayTotalGexBn(row: Record<string, unknown>): number | null {
+  const direct =
+    num(row.gamma_per_one_percent) ??
+    num(row.net_gamma) ??
+    num(row.total_gamma) ??
+    num(row.gamma) ??
+    num(row.net_gamma_oi_bn) ??
+    num(row.spot_gamma_bn);
+  if (direct != null) {
+    return Math.abs(direct) > 1e6 ? direct / 1e9 : direct;
+  }
+
+  const call = num(row.call_gamma_oi) ?? num(row.call_gamma);
+  const put = num(row.put_gamma_oi) ?? num(row.put_gamma);
+  if (call != null || put != null) {
+    const sum = (call ?? 0) + (put ?? 0);
+    return Math.abs(sum) > 1e6 ? sum / 1e9 : sum;
+  }
+  return null;
+}
+
+export function parseExpirationJson(raw: unknown, endpoint: string): Record<string, number> {
+  const rows = unwrapUwRows(raw);
+  const out: Record<string, number> = {};
+  for (const row of rows) {
+    const exp =
+      row.expiration ??
+      row.expiry ??
+      row.date ??
+      row.expire_date ??
+      row.expiration_date;
+    if (exp == null) continue;
+    const gex =
+      num(row.gex_bn_per_pct) ??
+      num(row.net_gex) ??
+      num(row.gamma) ??
+      num(row.GEX) ??
+      netSpotGammaBn({ ...row, _endpoint: endpoint });
+    if (gex == null) continue;
+    const key = String(exp).slice(0, 10);
+    out[key] = (out[key] ?? 0) + gex;
+  }
+  return out;
 }
 
 function netSpotGammaBn(row: Record<string, unknown>): number | null {
@@ -76,8 +177,8 @@ function netSpotGammaBn(row: Record<string, unknown>): number | null {
   const p = put ?? 0;
   const sum = c + p;
   const diff = c - p;
-  const raw = Math.abs(p) > 0 && p < 0 ? sum : diff;
-  return Math.abs(raw) > 1e6 ? raw / 1e9 : raw / 1e3;
+  const rawVal = Math.abs(p) > 0 && p < 0 ? sum : diff;
+  return Math.abs(rawVal) > 1e6 ? rawVal / 1e9 : rawVal / 1e3;
 }
 
 export function parseStrikeRows(raw: unknown, endpoint: string): StrikeRow[] {
@@ -207,21 +308,16 @@ export function parseIntradayTimelinePoints(
   for (const row of rows) {
     const time = row.time ?? row.timestamp ?? row.date;
     const spot = num(row.price) ?? num(row.spot);
-    const total =
-      num(row.gamma_per_one_percent) ??
-      num(row.net_gamma) ??
-      num(row.total_gamma) ??
-      num(row.gamma);
+    const gex = intradayTotalGexBn(row);
 
-    let ts = createdAt;
+    let ts = exportTsFromIso(createdAt);
     if (typeof time === "string" && time.includes("T")) {
       ts = exportTsFromIso(time);
-    } else if (typeof time === "string") {
+    } else if (typeof time === "string" && /\d{1,2}:\d{2}/.test(time)) {
       ts = `${fallbackDate}_${time.replace(/:/g, "").slice(0, 6)}`;
     }
 
-    if (spot == null && total == null) continue;
-    const gex = total != null ? (Math.abs(total) > 1e6 ? total / 1e9 : total) : null;
+    if (spot == null && gex == null) continue;
     out.push({
       ts,
       spot,
@@ -231,5 +327,7 @@ export function parseIntradayTimelinePoints(
     });
   }
 
-  return out.sort((a, b) => a.ts.localeCompare(b.ts));
+  const deduped = new Map<string, (typeof out)[number]>();
+  for (const point of out) deduped.set(point.ts, point);
+  return Array.from(deduped.values()).sort((a, b) => a.ts.localeCompare(b.ts));
 }

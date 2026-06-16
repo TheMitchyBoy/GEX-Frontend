@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { ChartSkeleton } from "@/components/LoadingSkeleton";
+import { ProcessorOnlyGate } from "@/components/ProcessorOnlyGate";
 import type { LlmPredictionRow } from "@/lib/types";
 
 export default function LlmPredictionsPage() {
@@ -27,6 +28,7 @@ export default function LlmPredictionsPage() {
         <h1>LLM Predictions</h1>
         <p>Forecast history from the <code>llm_predictions</code> table.</p>
       </div>
+      <ProcessorOnlyGate feature="LLM Predictions">
       {error ? <div className="error-banner">{error}</div> : null}
       <div className="card">
         {loading ? <ChartSkeleton /> : predictions.length ? (
@@ -60,6 +62,7 @@ export default function LlmPredictionsPage() {
           <EmptyState title="No predictions" message="The llm_predictions table is empty." />
         )}
       </div>
+      </ProcessorOnlyGate>
     </>
   );
 }

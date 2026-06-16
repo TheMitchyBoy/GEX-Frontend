@@ -2,6 +2,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import type { Metadata } from "next";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
+import { SchemaProvider } from "@/components/SchemaProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -25,11 +26,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${inter.variable} ${jetbrains.variable}`}>
       <body>
-        <div className="app-shell">
-          <Nav />
-          <main>{children}</main>
-          <Footer />
-        </div>
+        <SchemaProvider>
+          <div className="app-shell">
+            <Nav />
+            <main>{children}</main>
+            <Footer />
+          </div>
+        </SchemaProvider>
       </body>
     </html>
   );

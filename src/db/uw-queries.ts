@@ -5,14 +5,16 @@ import { configuredTicker, getResolvedTicker, setResolvedTicker } from "@/lib/ti
 import {
   exportTsFromIso,
   gammaFlipFromStrikes,
-  isIntradayEndpoint,
+  inspectRawJson,
   isStrikeEndpoint,
   marketDateFromTs,
+  normalizeEndpoint,
+  parseExpirationJson,
   parseIntradayTimelinePoints,
   parseStrikeRows,
   snapshotFromPeriscopeRow,
-  type UwPeriscopeRow,
   unwrapUwRows,
+  type UwPeriscopeRow,
 } from "@/lib/uw-parser";
 import type {
   FreshnessInfo,
@@ -112,15 +114,166 @@ export async function uwGetSnapshotSummary(ts: string): Promise<Snapshot | null>
 export async function uwGetEnrichedSnapshot(ts: string): Promise<SnapshotEnriched | null> {
   const snapshot = await uwGetSnapshotSummary(ts);
   if (!snapshot) return null;
-  const strikes = await uwGetStrikesForSnapshot(ts, "auto");
+  const [strikes, expiration] = await Promise.all([
+    uwGetStrikesForSnapshot(ts, "auto"),
+    uwGetExpirationForSnapshot(ts),
+  ]);
   const walls = deriveWalls(strikes);
   const gammaFlip = gammaFlipFrom(null, snapshot.summary_json);
   return {
     ...snapshot,
+    expiration_json: Object.keys(expiration).length ? expiration : snapshot.expiration_json,
     features: null,
     diagnostics: null,
     walls,
     gamma_flip: gammaFlip,
+  };
+}
+
+async function uwGetExpirationForSnapshot(ts: string): Promise<Record<string, number>> {
+  const ticker = await resolveUwTicker();
+  const marketDate = marketDateFromTs(ts);
+  const rows = await queryOptional<UwPeriscopeRow>(
+    `SELECT ${PERISCOPE_SELECT}
+     FROM uw_periscope
+     WHERE ticker = $1 AND date = $2::date
+       AND (endpoint ILIKE '%expir%' OR endpoint ILIKE '%expiry%')
+     ORDER BY created_at DESC
+     LIMIT 5`,
+    [ticker, marketDate],
+    "uw.getExpiration",
+  );
+  const merged: Record<string, number> = {};
+  for (const row of rows) {
+    Object.assign(merged, parseExpirationJson(row.raw_json, row.endpoint));
+  }
+  return merged;
+}
+
+export async function uwGetGreeksPaginated(
+  ts: string,
+  limit = 100,
+  offset = 0,
+): Promise<{ rows: Record<string, unknown>[]; total: number }> {
+  const ticker = await resolveUwTicker();
+  const row = await fetchPeriscopeRowByTs(ticker, ts);
+  if (!row) return { rows: [], total: 0 };
+
+  let greeks = unwrapUwRows(row.raw_json);
+  if (!greeks.length && isStrikeEndpoint(row.endpoint) === false) {
+    const alt = await queryOptional<UwPeriscopeRow>(
+      `SELECT ${PERISCOPE_SELECT}
+       FROM uw_periscope
+       WHERE ticker = $1 AND date = $2::date
+         AND (endpoint ILIKE '%greek-exposure%strike%' OR endpoint ILIKE '%spot-exposures%strike%')
+       ORDER BY created_at DESC LIMIT 1`,
+      [ticker, marketDateFromTs(ts)],
+      "uw.getGreeks.alt",
+    );
+    if (alt[0]) greeks = unwrapUwRows(alt[0].raw_json);
+  }
+
+  const total = greeks.length;
+  return { rows: greeks.slice(offset, offset + limit), total };
+}
+
+export interface UwExploreRow {
+  id: number;
+  source: "uw_periscope" | "uw_history";
+  date: string;
+  ticker: string | null;
+  endpoint: string | null;
+  created_at: string;
+  content_hash: string | null;
+  row_count: number;
+  keys: string[];
+  kind: string;
+  parseable: boolean;
+  normalized_endpoint: string | null;
+}
+
+export async function uwExploreData(options: {
+  limit?: number;
+  offset?: number;
+  endpoint?: string;
+  date?: string;
+}): Promise<{ rows: UwExploreRow[]; total: number }> {
+  const ticker = await resolveUwTicker();
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+  const offset = Math.max(options.offset ?? 0, 0);
+
+  const params: unknown[] = [ticker];
+  let where = `WHERE ticker = $1`;
+  if (options.date) {
+    params.push(options.date);
+    where += ` AND date = $${params.length}::date`;
+  }
+  if (options.endpoint) {
+    params.push(`%${options.endpoint}%`);
+    where += ` AND endpoint ILIKE $${params.length}`;
+  }
+
+  const countRows = await queryOptional<{ total: string }>(
+    `SELECT COUNT(*)::text AS total FROM uw_periscope ${where}`,
+    params,
+    "uw.explore.count",
+  );
+  const total = Number(countRows[0]?.total ?? 0);
+
+  params.push(limit, offset);
+  const periscope = await queryOptional<UwPeriscopeRow>(
+    `SELECT ${PERISCOPE_SELECT}
+     FROM uw_periscope
+     ${where}
+     ORDER BY created_at DESC
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+    "uw.explore.rows",
+  );
+
+  const rows: UwExploreRow[] = periscope.map((row) => {
+    const inspection = inspectRawJson(row.raw_json, row.endpoint);
+    return {
+      id: row.id,
+      source: "uw_periscope",
+      date: row.date,
+      ticker: row.ticker,
+      endpoint: row.endpoint,
+      created_at: row.created_at,
+      content_hash: row.content_hash ?? null,
+      row_count: inspection.row_count,
+      keys: inspection.keys,
+      kind: inspection.kind,
+      parseable: inspection.parseable,
+      normalized_endpoint: normalizeEndpoint(row.endpoint),
+    };
+  });
+
+  return { rows, total };
+}
+
+export async function uwGetSampleRawJson(id: number, source: "uw_periscope" | "uw_history") {
+  if (source === "uw_history") {
+    const rows = await queryOptional<{ raw_json: unknown; date: string; created_at: string }>(
+      `SELECT raw_json, date::text AS date, created_at::text AS created_at FROM uw_history WHERE id = $1`,
+      [id],
+      "uw.sample.history",
+    );
+    return rows[0] ?? null;
+  }
+  const rows = await queryOptional<UwPeriscopeRow>(
+    `SELECT ${PERISCOPE_SELECT} FROM uw_periscope WHERE id = $1`,
+    [id],
+    "uw.sample.periscope",
+  );
+  if (!rows[0]) return null;
+  const row = rows[0];
+  return {
+    raw_json: row.raw_json,
+    date: row.date,
+    created_at: row.created_at,
+    endpoint: row.endpoint,
+    inspection: inspectRawJson(row.raw_json, row.endpoint),
   };
 }
 

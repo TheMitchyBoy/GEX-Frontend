@@ -45,6 +45,7 @@ Walls and gamma flip prefer `snapshot_features` over client-side derivation.
 | History | `/history` | Table with quality + diagnostic status |
 | Quality | `/quality` | Daily quality + prediction accuracy + processor_state |
 | Training | `/training` | `training_snapshots` view |
+| UW Data | `/uw-data` | `uw_periscope` explorer (uw_raw mode) |
 | Surface | `/surface` | `snapshots.surface_json` table |
 | Term Structure / Greeks / Trades / etc. | | See nav |
 
@@ -66,6 +67,8 @@ BASIC_AUTH_PASSWORD=
 | Endpoint | Description |
 |----------|-------------|
 | `GET /api/health` | Liveness + quality_score, diagnostic_status |
+| `GET /api/schema` | `processor` or `uw_raw` mode detection |
+| `GET /api/uw-data` | UW cache explorer (endpoints, JSON keys, samples) |
 | `GET /api/db-info` | Database diagnostics (host, counts, schema issues) |
 | `GET /api/ready` | Readiness (503 if DB down) |
 | `GET /api/snapshots/latest` | Latest with features + walls |
@@ -86,7 +89,7 @@ Legacy databases without new tables fall back to `snapshots` + `snapshot_strikes
 3. Optional `GEX_TICKER=SPX` if your processor uses a different symbol
 4. Healthcheck: `/api/health`
 
-### No data after switching databases?
+See [docs/DATABASE_SETUP.md](docs/DATABASE_SETUP.md) for processor vs UW raw setup and indexes.
 
 1. Open `/api/db-info` — shows host, row counts, tickers present, and specific issues
 2. Confirm the dashboard `DATABASE_URL` matches the processor Postgres (not an old empty instance)

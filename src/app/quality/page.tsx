@@ -6,6 +6,7 @@ import { PageShell } from "@/components/PageShell";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { formatNumber } from "@/lib/time";
+import { ProcessorOnlyGate } from "@/components/ProcessorOnlyGate";
 import type { DailyQualityRow, PredictionAccuracyRow, ProcessorStateRow } from "@/lib/types";
 
 function QualityContent() {
@@ -103,7 +104,9 @@ export default function QualityPage() {
         title="Data Quality"
         description="Daily quality rollups and LLM prediction accuracy from the processor schema."
       />
-      <QualityContent />
+      <ProcessorOnlyGate feature="Data Quality">
+        <QualityContent />
+      </ProcessorOnlyGate>
     </PageShell>
   );
 }

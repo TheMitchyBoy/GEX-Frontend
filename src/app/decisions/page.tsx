@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { ChartSkeleton } from "@/components/LoadingSkeleton";
+import { ProcessorOnlyGate } from "@/components/ProcessorOnlyGate";
 import type { DecisionRow } from "@/lib/types";
 
 export default function DecisionsPage() {
@@ -27,6 +28,7 @@ export default function DecisionsPage() {
         <h1>Decision Log</h1>
         <p>Trader decisions and AI verdicts from the <code>decisions</code> table.</p>
       </div>
+      <ProcessorOnlyGate feature="Decision Log">
       {error ? <div className="error-banner">{error}</div> : null}
       <div className="card">
         {loading ? <ChartSkeleton /> : decisions.length ? (
@@ -56,6 +58,7 @@ export default function DecisionsPage() {
           <EmptyState title="No decisions" message="The decisions table is empty." />
         )}
       </div>
+      </ProcessorOnlyGate>
     </>
   );
 }

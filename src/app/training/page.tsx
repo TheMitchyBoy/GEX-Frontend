@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PageShell } from "@/components/PageShell";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { formatGex, formatNumber } from "@/lib/time";
+import { ProcessorOnlyGate } from "@/components/ProcessorOnlyGate";
 import type { TrainingSnapshotRow } from "@/lib/types";
 
 export default function TrainingPage() {
@@ -23,13 +25,14 @@ export default function TrainingPage() {
   }, []);
 
   return (
-    <>
+    <PageShell>
       <PageHeader
         title="Training Snapshots"
         description="High-quality slices from the training_snapshots view (quality ≥ 0.8, ok diagnostics)."
       />
-      {error ? <div className="error-banner">{error}</div> : null}
-      <div className="card">
+      <ProcessorOnlyGate feature="Training Snapshots">
+        {error ? <div className="error-banner">{error}</div> : null}
+        <div className="card">
         {loading ? (
           <p className="glossary">Loading…</p>
         ) : rows.length ? (
@@ -69,7 +72,8 @@ export default function TrainingPage() {
             message="The training_snapshots view is empty — processor may still be backfilling."
           />
         )}
-      </div>
-    </>
+        </div>
+      </ProcessorOnlyGate>
+    </PageShell>
   );
 }

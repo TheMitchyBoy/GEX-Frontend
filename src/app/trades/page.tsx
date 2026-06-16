@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { ChartSkeleton } from "@/components/LoadingSkeleton";
 import { formatNumber } from "@/lib/time";
+import { ProcessorOnlyGate } from "@/components/ProcessorOnlyGate";
 import type { TradeRow } from "@/lib/types";
 
 export default function TradesPage() {
@@ -28,6 +29,7 @@ export default function TradesPage() {
         <h1>Trade Journal</h1>
         <p>Paper/live trades from the <code>trades</code> table.</p>
       </div>
+      <ProcessorOnlyGate feature="Trade Journal">
       {error ? <div className="error-banner">{error}</div> : null}
       <div className="card">
         {loading ? <ChartSkeleton /> : trades.length ? (
@@ -67,6 +69,7 @@ export default function TradesPage() {
           <EmptyState title="No trades" message="The trades table is empty." />
         )}
       </div>
+      </ProcessorOnlyGate>
     </>
   );
 }

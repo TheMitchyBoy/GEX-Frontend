@@ -509,6 +509,7 @@ export async function getGreeksPaginated(
   limit = 100,
   offset = 0,
 ): Promise<{ rows: Record<string, unknown>[]; total: number }> {
+  if (await isUwRaw()) return uw.uwGetGreeksPaginated(ts, limit, offset);
   const ticker = await resolveActiveTicker();
   const countRows = await query<{ total: string }>(
     `SELECT COALESCE(jsonb_array_length(greek_exposure_json), 0) AS total

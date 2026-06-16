@@ -2,57 +2,42 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ProcessorBanner } from "@/components/ProcessorBanner";
+import { SchemaBanner } from "@/components/SchemaBanner";
+import { useSchema } from "@/components/SchemaProvider";
+import { filterNavLinks, navSections } from "@/lib/nav-config";
 import "./nav.css";
-
-const sections = [
-  {
-    label: "Live",
-    links: [
-      { href: "/", label: "Overview" },
-      { href: "/timeline", label: "Intraday" },
-      { href: "/history", label: "History" },
-    ],
-  },
-  {
-    label: "Charts",
-    links: [
-      { href: "/profile", label: "Profile" },
-      { href: "/cumulative", label: "Cumulative" },
-      { href: "/heatmap", label: "Heatmap" },
-      { href: "/wall-drift", label: "Walls" },
-      { href: "/term-structure", label: "Term" },
-      { href: "/surface", label: "Surface" },
-      { href: "/greeks", label: "Greeks" },
-    ],
-  },
-  {
-    label: "Journal",
-    links: [
-      { href: "/quality", label: "Quality" },
-      { href: "/training", label: "Training" },
-      { href: "/trades", label: "Trades" },
-      { href: "/decisions", label: "Decisions" },
-      { href: "/llm-predictions", label: "LLM" },
-      { href: "/daily-insights", label: "Insights" },
-    ],
-  },
-];
 
 const mobileTabs = [
   { href: "/", label: "Home", icon: "◉" },
   { href: "/profile", label: "GEX", icon: "▥" },
   { href: "/timeline", label: "Day", icon: "↝" },
   { href: "/heatmap", label: "Map", icon: "▦" },
+  { href: "/uw-data", label: "UW", icon: "◈", uwOnly: true },
   { href: "/history", label: "Log", icon: "☰" },
 ];
-
-const allLinks = sections.flatMap((s) => s.links);
 
 export function Nav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { mode } = useSchema();
+
+  const sections = useMemo(
+    () =>
+      navSections.map((section) => ({
+        ...section,
+        links: filterNavLinks(section.links, mode),
+      })),
+    [mode],
+  );
+
+  const allLinks = sections.flatMap((s) => s.links);
+  const tabs = mobileTabs.filter((tab) => {
+    if (tab.uwOnly && mode !== "uw_raw") return false;
+    if (tab.href === "/history" && mode === "uw_raw") return false;
+    return true;
+  });
 
   return (
     <>
@@ -111,9 +96,10 @@ export function Nav() {
           </nav>
         ) : null}
       </header>
+      <SchemaBanner />
       <ProcessorBanner />
       <nav className="mobile-tab-bar" aria-label="Quick navigation">
-        {mobileTabs.map((tab) => (
+        {tabs.map((tab) => (
           <Link
             key={tab.href}
             href={tab.href}

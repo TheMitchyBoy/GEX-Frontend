@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { SnapshotToolbar, useSnapshotFromUrl } from "@/components/SnapshotToolbar";
 import { EmptyState } from "@/components/EmptyState";
 import { PageShell } from "@/components/PageShell";
+import { ProcessorOnlyGate } from "@/components/ProcessorOnlyGate";
 import type { DailyInsightRow } from "@/lib/types";
 
 function InsightsContent() {
@@ -62,7 +63,9 @@ export default function DailyInsightsPage() {
         <h1>Daily Insights</h1>
         <p>AI lessons and strategies from the <code>daily_insights</code> table.</p>
       </div>
-      <InsightsContent />
+      <ProcessorOnlyGate feature="Daily Insights">
+        <InsightsContent />
+      </ProcessorOnlyGate>
     </PageShell>
   );
 }
