@@ -4,6 +4,10 @@ Read-only SPX gamma exposure dashboard querying Railway PostgreSQL populated by 
 
 ## Database tables used
 
+The dashboard auto-detects which schema your Postgres uses:
+
+### Processor schema (GEX processor output)
+
 | Table / view | Purpose |
 |--------------|---------|
 | `snapshots` | Core snapshot rows (`snapshot_at`, `prior_ts`, JSONB payloads) |
@@ -16,8 +20,15 @@ Read-only SPX gamma exposure dashboard querying Railway PostgreSQL populated by 
 | `prediction_accuracy_daily` | LLM prediction accuracy rollups |
 | `training_snapshots` | View — high-quality training slices |
 | `processor_state` | Backfill cursors and processor flags |
-| `surface_json` | On `snapshots` — expiration/strike surface rows |
-| `trades`, `decisions`, `llm_predictions`, `daily_insights` | Optional journal tables |
+
+### UW raw cache schema
+
+| Table | Purpose |
+|-------|---------|
+| `uw_periscope` | Cached Unusual Whales API responses (`raw_json`, `ticker`, `endpoint`, `date`) |
+| `uw_history` | Historical UW API payloads by `date` |
+
+When only `uw_periscope` / `uw_history` exist, the dashboard parses `raw_json` from strike endpoints (`spot-exposures/strike`, `greek-exposure/strike`) for charts and overview.
 
 Walls and gamma flip prefer `snapshot_features` over client-side derivation.
 

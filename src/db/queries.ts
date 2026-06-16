@@ -1,5 +1,3 @@
-import { Pool, type QueryResultRow } from "pg";
-import { logDbError, logSlowQuery } from "@/lib/logger";
 import type {
   DailyInsightRow,
   DailyQualityRow,
@@ -25,10 +23,21 @@ import type {
 } from "@/lib/types";
 import type { DbDiagnostics } from "@/lib/db-diagnostics";
 import { maskDatabaseHost } from "@/lib/db-diagnostics";
+import { detectDatabaseSchema } from "@/lib/schema";
 import { configuredTicker, getResolvedTicker, setResolvedTicker } from "@/lib/ticker";
+import { checkDbConnection, query, queryOptional } from "@/db/pg";
+import {
+  deriveWalls,
+  gammaFlipFrom,
+  wallsFromFeatures,
+} from "@/db/queries-shared";
+import * as uw from "@/db/uw-queries";
 
-let pool: Pool | null = null;
-let shutdownRegistered = false;
+export { checkDbConnection, deriveWalls, gammaFlipFrom, wallsFromFeatures };
+
+async function isUwRaw(): Promise<boolean> {
+  return (await detectDatabaseSchema()) === "uw_raw";
+}
 
 const SNAPSHOT_JOIN_COLUMNS = `s.ticker, s.ts, s.market_date, s.spot, s.total_gex, s.regime,
   s.summary_json, s.expiration_json, s.surface_json, s.greek_exposure_json,
@@ -146,113 +155,8 @@ async function selectLatestSnapshot(ticker: string): Promise<Snapshot | null> {
   );
 }
 
-function resolveSsl(connectionString: string): false | { rejectUnauthorized: boolean } {
-  if (connectionString.includes(".railway.internal")) return false;
-  if (
-    connectionString.includes("sslmode=require") ||
-    connectionString.includes("ssl=true") ||
-    connectionString.includes("proxy.rlwy.net")
-  ) {
-    return { rejectUnauthorized: false };
-  }
-  return false;
-}
-
-function registerShutdown() {
-  if (shutdownRegistered || typeof process === "undefined") return;
-  shutdownRegistered = true;
-  const close = async () => {
-    if (pool) {
-      await pool.end().catch(() => undefined);
-      pool = null;
-    }
-  };
-  process.on("SIGTERM", close);
-  process.on("SIGINT", close);
-}
-
-function getPool(): Pool | null {
-  if (!pool) {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) return null;
-    pool = new Pool({
-      connectionString,
-      ssl: resolveSsl(connectionString),
-      max: Number(process.env.PG_POOL_MAX ?? "5"),
-      idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 10_000,
-    });
-    registerShutdown();
-  }
-  return pool;
-}
-
-async function query<T extends QueryResultRow>(
-  text: string,
-  params?: unknown[],
-  queryName = "query",
-): Promise<T[]> {
-  const db = getPool();
-  if (!db) throw new Error("DATABASE_URL is not set");
-  const started = Date.now();
-  try {
-    const result = await db.query<T>(text, params);
-    logSlowQuery(queryName, Date.now() - started, { rows: result.rowCount });
-    return result.rows;
-  } catch (error) {
-    logDbError(queryName, error);
-    throw error;
-  }
-}
-
-async function queryOptional<T extends QueryResultRow>(
-  text: string,
-  params?: unknown[],
-  queryName = "query",
-): Promise<T[]> {
-  try {
-    return await query<T>(text, params, queryName);
-  } catch {
-    return [];
-  }
-}
-
-export function deriveWalls(strikes: StrikeRow[]): Walls {
-  if (strikes.length === 0) return { call_wall: null, put_wall: null };
-  let callWall: StrikeRow | null = null;
-  let putWall: StrikeRow | null = null;
-  for (const row of strikes) {
-    const gex = row.gex_bn_per_pct ?? 0;
-    if (gex > 0 && (!callWall || gex > (callWall.gex_bn_per_pct ?? 0))) callWall = row;
-    if (gex < 0 && (!putWall || gex < (putWall.gex_bn_per_pct ?? 0))) putWall = row;
-  }
-  return { call_wall: callWall?.strike ?? null, put_wall: putWall?.strike ?? null };
-}
-
-export function wallsFromFeatures(
-  features: SnapshotFeatures | null,
-  strikes: StrikeRow[],
-): Walls {
-  if (features?.call_wall != null || features?.put_wall != null) {
-    return {
-      call_wall: features.call_wall ?? null,
-      put_wall: features.put_wall ?? null,
-    };
-  }
-  return deriveWalls(strikes);
-}
-
-export function gammaFlipFrom(
-  features: SnapshotFeatures | null,
-  summary: SummaryJson | null,
-): number | null {
-  if (features?.gamma_flip != null) return features.gamma_flip;
-  const fromSummary = summary?.gamma_flip;
-  if (fromSummary != null && !Number.isNaN(Number(fromSummary))) return Number(fromSummary);
-  return null;
-}
-
 export async function getLatestSnapshot(): Promise<Snapshot | null> {
+  if (await isUwRaw()) return uw.uwGetLatestSnapshot();
   const ticker = await resolveActiveTicker();
   return selectLatestSnapshot(ticker);
 }
@@ -289,6 +193,7 @@ export async function getSnapshotDiagnostics(ts: string): Promise<SnapshotDiagno
 }
 
 export async function getEnrichedSnapshot(ts: string): Promise<SnapshotEnriched | null> {
+  if (await isUwRaw()) return uw.uwGetEnrichedSnapshot(ts);
   const snapshot = await getSnapshotSummary(ts);
   if (!snapshot) return null;
 
@@ -308,6 +213,7 @@ export async function getEnrichedSnapshot(ts: string): Promise<SnapshotEnriched 
 }
 
 export async function getMarketDates(limit = 90): Promise<string[]> {
+  if (await isUwRaw()) return uw.uwGetMarketDates(limit);
   const ticker = await resolveActiveTicker();
   const rows = await query<{ market_date: string }>(
     `SELECT DISTINCT market_date
@@ -322,6 +228,7 @@ export async function getMarketDates(limit = 90): Promise<string[]> {
 }
 
 export async function getTimelineForDate(marketDate: string): Promise<SnapshotTimelineRow[]> {
+  if (await isUwRaw()) return uw.uwGetTimelineForDate(marketDate);
   const ticker = await resolveActiveTicker();
   const rows = await queryOptional<SnapshotTimelineRow>(
     `SELECT s.ts, s.spot, s.total_gex, s.regime,
@@ -369,6 +276,7 @@ export async function getStrikesForSnapshot(
   ts: string,
   source: "auto" | "atm" | "full" = "auto",
 ): Promise<StrikeRow[]> {
+  if (await isUwRaw()) return uw.uwGetStrikesForSnapshot(ts, source);
   const ticker = await resolveActiveTicker();
   const fetchAtm = async () =>
     queryOptional<StrikeRow>(
@@ -402,6 +310,7 @@ export async function getStrikesForSnapshot(
 }
 
 export async function getSpotStrikesForSnapshot(ts: string): Promise<SpotStrikeRow[]> {
+  if (await isUwRaw()) return uw.uwGetSpotStrikesForSnapshot(ts);
   const ticker = await resolveActiveTicker();
   return queryOptional<SpotStrikeRow>(
     `SELECT s.ts, s.spot, s.regime, st.strike, st.gex_bn_per_pct, st.cumulative_gex_bn_per_pct
@@ -426,6 +335,7 @@ export async function getSpotStrikesForSnapshot(ts: string): Promise<SpotStrikeR
 }
 
 export async function getMultiDaySeries(limit = 500): Promise<SnapshotBrief[]> {
+  if (await isUwRaw()) return uw.uwGetMultiDaySeries(limit);
   const ticker = await resolveActiveTicker();
   return query<SnapshotBrief>(
     `SELECT ts, market_date, spot, total_gex, regime
@@ -441,6 +351,7 @@ export async function getMultiDaySeries(limit = 500): Promise<SnapshotBrief[]> {
 }
 
 export async function getFreshness(): Promise<FreshnessInfo | null> {
+  if (await isUwRaw()) return uw.uwGetFreshness();
   const ticker = await resolveActiveTicker();
   const rows = await queryOptional<FreshnessInfo>(
     `SELECT s.ts, s.indexed_at, s.snapshot_at::text AS snapshot_at,
@@ -487,6 +398,7 @@ export async function getFreshness(): Promise<FreshnessInfo | null> {
 }
 
 export async function getSnapshotSummary(ts: string): Promise<Snapshot | null> {
+  if (await isUwRaw()) return uw.uwGetSnapshotSummary(ts);
   const ticker = await resolveActiveTicker();
   const full = await queryOptional<Snapshot>(
     `SELECT ${SNAPSHOT_COLUMNS}
@@ -508,6 +420,7 @@ export async function getSnapshotSummary(ts: string): Promise<Snapshot | null> {
 }
 
 export async function getWallDriftForDate(marketDate: string): Promise<WallDriftRow[]> {
+  if (await isUwRaw()) return uw.uwGetWallDriftForDate(marketDate);
   const ticker = await resolveActiveTicker();
   const fromFeatures = await queryOptional<WallDriftRow>(
     `SELECT s.ts, s.spot, f.gamma_flip, f.call_wall, f.put_wall,
@@ -565,6 +478,7 @@ export async function getWallDriftForDate(marketDate: string): Promise<WallDrift
 }
 
 export async function getHeatmapForDate(marketDate: string): Promise<HeatmapCell[]> {
+  if (await isUwRaw()) return uw.uwGetHeatmapForDate(marketDate);
   const ticker = await resolveActiveTicker();
   const fromAtm = await queryOptional<HeatmapCell>(
     `SELECT s.ts, s.spot, st.strike, st.gex_bn_per_pct
@@ -750,6 +664,7 @@ export async function getProcessorState(): Promise<ProcessorStateRow[]> {
 export async function getSurfaceForSnapshot(
   ts: string,
 ): Promise<Record<string, unknown>[]> {
+  if (await isUwRaw()) return uw.uwGetSurfaceForSnapshot(ts);
   const ticker = await resolveActiveTicker();
   const rows = await queryOptional<{ surface_json: Record<string, unknown>[] | null }>(
     `SELECT surface_json FROM snapshots WHERE ticker = $1 AND ts = $2`,
@@ -761,6 +676,12 @@ export async function getSurfaceForSnapshot(
 }
 
 export async function getDbDiagnostics(): Promise<DbDiagnostics> {
+  if (await isUwRaw()) {
+    const diag = await uw.uwGetDbDiagnostics();
+    diag.endpoints = await uw.uwListEndpoints(diag.active_ticker);
+    return diag;
+  }
+
   const configured = configuredTicker();
   const base: DbDiagnostics = {
     postgres: false,
@@ -776,6 +697,7 @@ export async function getDbDiagnostics(): Promise<DbDiagnostics> {
     tables_present: [],
     schema_issues: [],
     query_error: null,
+    schema_mode: "processor",
   };
 
   if (!process.env.DATABASE_URL) {
@@ -870,13 +792,3 @@ export async function getDbDiagnostics(): Promise<DbDiagnostics> {
   return base;
 }
 
-export async function checkDbConnection(): Promise<boolean> {
-  try {
-    const db = getPool();
-    if (!db) return false;
-    await db.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  }
-}

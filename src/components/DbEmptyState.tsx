@@ -33,6 +33,10 @@ export function DbEmptyState() {
           <h2 style={{ marginTop: 0 }}>Database status</h2>
           <dl className="diag-list">
             <div>
+              <dt>Schema</dt>
+              <dd><code>{info.schema_mode ?? "unknown"}</code></dd>
+            </div>
+            <div>
               <dt>Connected</dt>
               <dd>{info.postgres ? "Yes" : "No"}</dd>
             </div>
@@ -62,6 +66,13 @@ export function DbEmptyState() {
               <dd>{info.latest_ts ?? "—"}</dd>
             </div>
           </dl>
+
+          {info.endpoints?.length ? (
+            <p className="glossary">
+              UW endpoints:{" "}
+              {info.endpoints.map((e) => `${e.endpoint} (${e.count})`).join(", ")}
+            </p>
+          ) : null}
 
           {info.tickers.length ? (
             <p className="glossary">

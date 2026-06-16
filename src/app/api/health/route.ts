@@ -78,6 +78,8 @@ export async function GET() {
     configured_ticker: dbInfo?.configured_ticker ?? null,
     database_host: dbInfo?.database_host ?? null,
     snapshot_count: dbInfo?.snapshot_count ?? null,
+    schema_mode: dbInfo?.schema_mode ?? null,
+    endpoints: dbInfo?.endpoints ?? [],
     schema_issues: dbInfo?.schema_issues ?? [],
     latest_ts: snapshot?.ts ?? null,
     age_minutes: ageMinutes,
