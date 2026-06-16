@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   checkDbConnection,
+  getDbDiagnostics,
   getFreshness,
   getLatestSnapshot,
   getSnapshotDiagnostics,
@@ -20,13 +21,15 @@ export async function GET() {
   let snapshot = null;
   let freshness = null;
   let walls: Walls = { call_wall: null, put_wall: null };
+  let dbInfo = null;
 
   try {
     postgres = await checkDbConnection();
     if (postgres) {
-      [snapshot, freshness] = await Promise.all([
+      [snapshot, freshness, dbInfo] = await Promise.all([
         getLatestSnapshot(),
         getFreshness(),
+        getDbDiagnostics(),
       ]);
 
       if (snapshot?.ts) {
@@ -71,7 +74,11 @@ export async function GET() {
     status,
     postgres,
     db_error: dbError,
-    ticker: snapshot?.ticker ?? "SPX",
+    ticker: snapshot?.ticker ?? dbInfo?.active_ticker ?? "SPX",
+    configured_ticker: dbInfo?.configured_ticker ?? null,
+    database_host: dbInfo?.database_host ?? null,
+    snapshot_count: dbInfo?.snapshot_count ?? null,
+    schema_issues: dbInfo?.schema_issues ?? [],
     latest_ts: snapshot?.ts ?? null,
     age_minutes: ageMinutes,
     indexed_at: freshness?.indexed_at ?? null,

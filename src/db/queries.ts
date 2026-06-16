@@ -23,14 +23,128 @@ import type {
   WallDriftRow,
   Walls,
 } from "@/lib/types";
-import { TICKER } from "@/lib/types";
+import type { DbDiagnostics } from "@/lib/db-diagnostics";
+import { maskDatabaseHost } from "@/lib/db-diagnostics";
+import { configuredTicker, getResolvedTicker, setResolvedTicker } from "@/lib/ticker";
 
 let pool: Pool | null = null;
 let shutdownRegistered = false;
 
+const SNAPSHOT_JOIN_COLUMNS = `s.ticker, s.ts, s.market_date, s.spot, s.total_gex, s.regime,
+  s.summary_json, s.expiration_json, s.surface_json, s.greek_exposure_json,
+  s.indexed_at, s.snapshot_at, s.prior_ts`;
+
 const SNAPSHOT_COLUMNS = `ticker, ts, market_date, spot, total_gex, regime,
   summary_json, expiration_json, surface_json, greek_exposure_json,
   indexed_at, snapshot_at, prior_ts`;
+
+const SNAPSHOT_COLUMNS_LEGACY = `ticker, ts, market_date, spot, total_gex, regime,
+  summary_json, expiration_json, greek_exposure_json, indexed_at`;
+
+const PROCESSOR_TABLES = [
+  "snapshots",
+  "snapshot_strikes",
+  "snapshot_strikes_atm",
+  "snapshot_features",
+  "snapshot_diagnostics",
+  "daily_quality_stats",
+  "prediction_accuracy_daily",
+  "processor_state",
+  "latest_snapshot",
+  "training_snapshots",
+] as const;
+
+let tickerCacheAt = 0;
+
+async function resolveActiveTicker(): Promise<string> {
+  if (tickerCacheAt > 0 && Date.now() - tickerCacheAt < 60_000) {
+    return getResolvedTicker();
+  }
+
+  const configured = configuredTicker();
+
+  try {
+    const forConfigured = await queryOptional<{ cnt: string }>(
+      `SELECT COUNT(*)::text AS cnt FROM snapshots WHERE ticker = $1`,
+      [configured],
+      "resolveActiveTicker.configured",
+    );
+    if (Number(forConfigured[0]?.cnt ?? 0) > 0) {
+      setResolvedTicker(configured);
+      tickerCacheAt = Date.now();
+      return configured;
+    }
+
+    const any = await queryOptional<{ ticker: string }>(
+      `SELECT ticker FROM snapshots GROUP BY ticker ORDER BY COUNT(*) DESC LIMIT 1`,
+      [],
+      "resolveActiveTicker.any",
+    );
+    const resolved = any[0]?.ticker ?? configured;
+    setResolvedTicker(resolved);
+    tickerCacheAt = Date.now();
+    return resolved;
+  } catch {
+    return configured;
+  }
+}
+
+async function selectLatestSnapshot(ticker: string): Promise<Snapshot | null> {
+  const fromMv = await queryOptional<Snapshot>(
+    `SELECT ${SNAPSHOT_JOIN_COLUMNS}
+     FROM latest_snapshot ls
+     JOIN snapshots s ON s.ticker = ls.ticker AND s.ts = ls.ts
+     WHERE ls.ticker = $1`,
+    [ticker],
+    "getLatestSnapshot.mv",
+  );
+  if (fromMv[0]) return fromMv[0];
+
+  const full = await queryOptional<Snapshot>(
+    `SELECT ${SNAPSHOT_COLUMNS}
+     FROM snapshots
+     WHERE ticker = $1
+     ORDER BY ts DESC
+     LIMIT 1`,
+    [ticker],
+    "getLatestSnapshot.full",
+  );
+  if (full[0]) return full[0];
+
+  const legacy = await queryOptional<Snapshot>(
+    `SELECT ${SNAPSHOT_COLUMNS_LEGACY}
+     FROM snapshots
+     WHERE ticker = $1
+     ORDER BY ts DESC
+     LIMIT 1`,
+    [ticker],
+    "getLatestSnapshot.legacy",
+  );
+  if (legacy[0]) return legacy[0];
+
+  const anyTicker = await queryOptional<Snapshot>(
+    `SELECT ${SNAPSHOT_COLUMNS}
+     FROM snapshots
+     ORDER BY ts DESC
+     LIMIT 1`,
+    [],
+    "getLatestSnapshot.anyTicker",
+  );
+  if (anyTicker[0]) return anyTicker[0];
+
+  return (
+    (
+      await queryOptional<Snapshot>(
+        `SELECT ${SNAPSHOT_COLUMNS_LEGACY}
+         FROM snapshots
+         ORDER BY ts DESC
+         LIMIT 1`,
+        [],
+        "getLatestSnapshot.anyTickerLegacy",
+      )
+    )[0] ?? null
+  );
+}
 
 function resolveSsl(connectionString: string): false | { rejectUnauthorized: boolean } {
   if (connectionString.includes(".railway.internal")) return false;
@@ -139,29 +253,12 @@ export function gammaFlipFrom(
 }
 
 export async function getLatestSnapshot(): Promise<Snapshot | null> {
-  const fromMv = await queryOptional<Snapshot>(
-    `SELECT ${SNAPSHOT_COLUMNS}
-     FROM latest_snapshot ls
-     JOIN snapshots s ON s.ticker = ls.ticker AND s.ts = ls.ts
-     WHERE ls.ticker = $1`,
-    [TICKER],
-    "getLatestSnapshot.mv",
-  );
-  if (fromMv[0]) return fromMv[0];
-
-  const rows = await query<Snapshot>(
-    `SELECT ${SNAPSHOT_COLUMNS}
-     FROM snapshots
-     WHERE ticker = $1
-     ORDER BY ts DESC
-     LIMIT 1`,
-    [TICKER],
-    "getLatestSnapshot",
-  );
-  return rows[0] ?? null;
+  const ticker = await resolveActiveTicker();
+  return selectLatestSnapshot(ticker);
 }
 
 export async function getSnapshotFeatures(ts: string): Promise<SnapshotFeatures | null> {
+  const ticker = await resolveActiveTicker();
   const rows = await queryOptional<SnapshotFeatures>(
     `SELECT ticker, ts, prior_ts, snapshot_at::text, gamma_flip, call_wall, put_wall,
             pos_gamma_peak_strike, flip_distance_pct, wall_spread, gex_concentration,
@@ -172,19 +269,20 @@ export async function getSnapshotFeatures(ts: string): Promise<SnapshotFeatures 
             strike_profile_confidence, data_lag_sec
      FROM snapshot_features
      WHERE ticker = $1 AND ts = $2`,
-    [TICKER, ts],
+    [ticker, ts],
     "getSnapshotFeatures",
   );
   return rows[0] ?? null;
 }
 
 export async function getSnapshotDiagnostics(ts: string): Promise<SnapshotDiagnostics | null> {
+  const ticker = await resolveActiveTicker();
   const rows = await queryOptional<SnapshotDiagnostics>(
     `SELECT ticker, ts, status, validation_json, uw_fetch_ms, postgres_write_ms,
             indexed_at, quality_score, data_lag_sec
      FROM snapshot_diagnostics
      WHERE ticker = $1 AND ts = $2`,
-    [TICKER, ts],
+    [ticker, ts],
     "getSnapshotDiagnostics",
   );
   return rows[0] ?? null;
@@ -210,20 +308,22 @@ export async function getEnrichedSnapshot(ts: string): Promise<SnapshotEnriched 
 }
 
 export async function getMarketDates(limit = 90): Promise<string[]> {
+  const ticker = await resolveActiveTicker();
   const rows = await query<{ market_date: string }>(
     `SELECT DISTINCT market_date
      FROM snapshots
      WHERE ticker = $1 AND market_date IS NOT NULL
      ORDER BY market_date DESC
      LIMIT $2`,
-    [TICKER, limit],
+    [ticker, limit],
     "getMarketDates",
   );
   return rows.map((r) => r.market_date);
 }
 
 export async function getTimelineForDate(marketDate: string): Promise<SnapshotTimelineRow[]> {
-  return queryOptional<SnapshotTimelineRow>(
+  const ticker = await resolveActiveTicker();
+  const rows = await queryOptional<SnapshotTimelineRow>(
     `SELECT s.ts, s.spot, s.total_gex, s.regime,
             COALESCE(f.gamma_flip::text, s.summary_json->>'gamma_flip') AS gamma_flip,
             f.quality_score,
@@ -233,22 +333,20 @@ export async function getTimelineForDate(marketDate: string): Promise<SnapshotTi
      LEFT JOIN snapshot_diagnostics d ON d.ticker = s.ticker AND d.ts = s.ts
      WHERE s.ticker = $1 AND s.market_date = $2
      ORDER BY s.ts ASC`,
-    [TICKER, marketDate],
+    [ticker, marketDate],
     "getTimelineForDate",
-  ).then((rows) =>
-    rows.length
-      ? rows
-      : query<SnapshotTimelineRow>(
-          `SELECT ts, spot, total_gex, regime,
-                  summary_json->>'gamma_flip' AS gamma_flip,
-                  NULL::double precision AS quality_score,
-                  NULL::text AS diagnostic_status
-           FROM snapshots
-           WHERE ticker = $1 AND market_date = $2
-           ORDER BY ts ASC`,
-          [TICKER, marketDate],
-          "getTimelineForDate.legacy",
-        ),
+  );
+  if (rows.length) return rows;
+  return query<SnapshotTimelineRow>(
+    `SELECT ts, spot, total_gex, regime,
+            summary_json->>'gamma_flip' AS gamma_flip,
+            NULL::double precision AS quality_score,
+            NULL::text AS diagnostic_status
+     FROM snapshots
+     WHERE ticker = $1 AND market_date = $2
+     ORDER BY ts ASC`,
+    [ticker, marketDate],
+    "getTimelineForDate.legacy",
   );
 }
 
@@ -256,12 +354,13 @@ export async function getSnapshotsInRange(
   startDate: string,
   endDate: string,
 ): Promise<SnapshotBrief[]> {
+  const ticker = await resolveActiveTicker();
   return query<SnapshotBrief>(
     `SELECT ts, market_date, spot, total_gex, regime
      FROM snapshots
      WHERE ticker = $1 AND market_date BETWEEN $2 AND $3
      ORDER BY ts ASC`,
-    [TICKER, startDate, endDate],
+    [ticker, startDate, endDate],
     "getSnapshotsInRange",
   );
 }
@@ -270,13 +369,14 @@ export async function getStrikesForSnapshot(
   ts: string,
   source: "auto" | "atm" | "full" = "auto",
 ): Promise<StrikeRow[]> {
+  const ticker = await resolveActiveTicker();
   const fetchAtm = async () =>
     queryOptional<StrikeRow>(
       `SELECT strike, gex_bn_per_pct, cumulative_gex_bn_per_pct
        FROM snapshot_strikes_atm
        WHERE ticker = $1 AND ts = $2
        ORDER BY strike ASC`,
-      [TICKER, ts],
+      [ticker, ts],
       "getStrikesForSnapshot.atm",
     );
 
@@ -286,7 +386,7 @@ export async function getStrikesForSnapshot(
        FROM snapshot_strikes
        WHERE ticker = $1 AND ts = $2
        ORDER BY strike ASC`,
-      [TICKER, ts],
+      [ticker, ts],
       "getStrikesForSnapshot.full",
     );
 
@@ -302,13 +402,14 @@ export async function getStrikesForSnapshot(
 }
 
 export async function getSpotStrikesForSnapshot(ts: string): Promise<SpotStrikeRow[]> {
+  const ticker = await resolveActiveTicker();
   return queryOptional<SpotStrikeRow>(
     `SELECT s.ts, s.spot, s.regime, st.strike, st.gex_bn_per_pct, st.cumulative_gex_bn_per_pct
      FROM snapshots s
      JOIN snapshot_strikes_atm st ON st.ticker = s.ticker AND st.ts = s.ts
      WHERE s.ticker = $1 AND s.ts = $2
      ORDER BY st.strike`,
-    [TICKER, ts],
+    [ticker, ts],
     "getSpotStrikesForSnapshot.atm",
   ).then(async (rows) => {
     if (rows.length) return rows;
@@ -318,13 +419,14 @@ export async function getSpotStrikesForSnapshot(ts: string): Promise<SpotStrikeR
        JOIN snapshot_strikes st ON st.ticker = s.ticker AND st.ts = s.ts
        WHERE s.ticker = $1 AND s.ts = $2
        ORDER BY st.strike`,
-      [TICKER, ts],
+      [ticker, ts],
       "getSpotStrikesForSnapshot",
     );
   });
 }
 
 export async function getMultiDaySeries(limit = 500): Promise<SnapshotBrief[]> {
+  const ticker = await resolveActiveTicker();
   return query<SnapshotBrief>(
     `SELECT ts, market_date, spot, total_gex, regime
      FROM snapshots
@@ -333,12 +435,13 @@ export async function getMultiDaySeries(limit = 500): Promise<SnapshotBrief[]> {
          SELECT ts FROM snapshots WHERE ticker = $1 ORDER BY ts DESC LIMIT 1 OFFSET $2
        )
      ORDER BY ts ASC`,
-    [TICKER, limit],
+    [ticker, limit],
     "getMultiDaySeries",
   );
 }
 
 export async function getFreshness(): Promise<FreshnessInfo | null> {
+  const ticker = await resolveActiveTicker();
   const rows = await queryOptional<FreshnessInfo>(
     `SELECT s.ts, s.indexed_at, s.snapshot_at::text AS snapshot_at,
             CASE
@@ -357,7 +460,7 @@ export async function getFreshness(): Promise<FreshnessInfo | null> {
      WHERE s.ticker = $1
      ORDER BY s.ts DESC
      LIMIT 1`,
-    [TICKER],
+    [ticker],
     "getFreshness",
   );
 
@@ -377,24 +480,35 @@ export async function getFreshness(): Promise<FreshnessInfo | null> {
      WHERE ticker = $1
      ORDER BY ts DESC
      LIMIT 1`,
-    [TICKER],
+    [ticker],
     "getFreshness.legacy",
   );
   return legacy[0] ?? null;
 }
 
 export async function getSnapshotSummary(ts: string): Promise<Snapshot | null> {
-  const rows = await query<Snapshot>(
+  const ticker = await resolveActiveTicker();
+  const full = await queryOptional<Snapshot>(
     `SELECT ${SNAPSHOT_COLUMNS}
      FROM snapshots
      WHERE ticker = $1 AND ts = $2`,
-    [TICKER, ts],
+    [ticker, ts],
     "getSnapshotSummary",
   );
-  return rows[0] ?? null;
+  if (full[0]) return full[0];
+
+  const legacy = await queryOptional<Snapshot>(
+    `SELECT ${SNAPSHOT_COLUMNS_LEGACY}
+     FROM snapshots
+     WHERE ticker = $1 AND ts = $2`,
+    [ticker, ts],
+    "getSnapshotSummary.legacy",
+  );
+  return legacy[0] ?? null;
 }
 
 export async function getWallDriftForDate(marketDate: string): Promise<WallDriftRow[]> {
+  const ticker = await resolveActiveTicker();
   const fromFeatures = await queryOptional<WallDriftRow>(
     `SELECT s.ts, s.spot, f.gamma_flip, f.call_wall, f.put_wall,
             f.quality_score, f.flip_confidence, f.regime_consistent,
@@ -404,7 +518,7 @@ export async function getWallDriftForDate(marketDate: string): Promise<WallDrift
      LEFT JOIN snapshot_diagnostics d ON d.ticker = s.ticker AND d.ts = s.ts
      WHERE s.ticker = $1 AND s.market_date = $2
      ORDER BY s.ts ASC`,
-    [TICKER, marketDate],
+    [ticker, marketDate],
     "getWallDriftForDate.features",
   );
   if (fromFeatures.length && fromFeatures.some((r) => r.call_wall != null || r.gamma_flip != null)) {
@@ -414,7 +528,7 @@ export async function getWallDriftForDate(marketDate: string): Promise<WallDrift
   const flipRows = await query<{ ts: string; spot: number | null; gamma_flip: string | null }>(
     `SELECT ts, spot, summary_json->>'gamma_flip' AS gamma_flip
      FROM snapshots WHERE ticker = $1 AND market_date = $2 ORDER BY ts ASC`,
-    [TICKER, marketDate],
+    [ticker, marketDate],
     "getWallDriftForDate.flip",
   );
   const callRows = await query<{ ts: string; call_wall: number }>(
@@ -423,7 +537,7 @@ export async function getWallDriftForDate(marketDate: string): Promise<WallDrift
      INNER JOIN snapshots s ON s.ticker = st.ticker AND s.ts = st.ts
      WHERE st.ticker = $1 AND s.market_date = $2 AND st.gex_bn_per_pct > 0
      ORDER BY st.ts, st.gex_bn_per_pct DESC`,
-    [TICKER, marketDate],
+    [ticker, marketDate],
     "getWallDriftForDate.call",
   );
   const putRows = await query<{ ts: string; put_wall: number }>(
@@ -432,7 +546,7 @@ export async function getWallDriftForDate(marketDate: string): Promise<WallDrift
      INNER JOIN snapshots s ON s.ticker = st.ticker AND s.ts = st.ts
      WHERE st.ticker = $1 AND s.market_date = $2 AND st.gex_bn_per_pct < 0
      ORDER BY st.ts, st.gex_bn_per_pct ASC`,
-    [TICKER, marketDate],
+    [ticker, marketDate],
     "getWallDriftForDate.put",
   );
   const callMap = new Map(callRows.map((r) => [r.ts, r.call_wall]));
@@ -451,13 +565,14 @@ export async function getWallDriftForDate(marketDate: string): Promise<WallDrift
 }
 
 export async function getHeatmapForDate(marketDate: string): Promise<HeatmapCell[]> {
+  const ticker = await resolveActiveTicker();
   const fromAtm = await queryOptional<HeatmapCell>(
     `SELECT s.ts, s.spot, st.strike, st.gex_bn_per_pct
      FROM snapshots s
      JOIN snapshot_strikes_atm st ON st.ticker = s.ticker AND st.ts = s.ts
      WHERE s.ticker = $1 AND s.market_date = $2
      ORDER BY s.ts ASC, st.strike ASC`,
-    [TICKER, marketDate],
+    [ticker, marketDate],
     "getHeatmapForDate.atm",
   );
   if (fromAtm.length) return fromAtm;
@@ -470,7 +585,7 @@ export async function getHeatmapForDate(marketDate: string): Promise<HeatmapCell
        AND s.spot IS NOT NULL
        AND st.strike BETWEEN s.spot * 0.97 AND s.spot * 1.03
      ORDER BY s.ts ASC, st.strike ASC`,
-    [TICKER, marketDate],
+    [ticker, marketDate],
     "getHeatmapForDate",
   );
 }
@@ -480,10 +595,11 @@ export async function getGreeksPaginated(
   limit = 100,
   offset = 0,
 ): Promise<{ rows: Record<string, unknown>[]; total: number }> {
+  const ticker = await resolveActiveTicker();
   const countRows = await query<{ total: string }>(
     `SELECT COALESCE(jsonb_array_length(greek_exposure_json), 0) AS total
      FROM snapshots WHERE ticker = $1 AND ts = $2`,
-    [TICKER, ts],
+    [ticker, ts],
     "getGreeksPaginated.count",
   );
   const total = Number(countRows[0]?.total ?? 0);
@@ -494,7 +610,7 @@ export async function getGreeksPaginated(
      WHERE ticker = $1 AND ts = $2
      ORDER BY elem
      LIMIT $3 OFFSET $4`,
-    [TICKER, ts, limit, offset],
+    [ticker, ts, limit, offset],
     "getGreeksPaginated",
   );
   return { rows: rows.map((r) => r.row), total };
@@ -504,12 +620,13 @@ export async function getDailyQualityStats(
   marketDate?: string,
   limit = 30,
 ): Promise<DailyQualityRow[]> {
+  const ticker = await resolveActiveTicker();
   if (marketDate) {
     return queryOptional<DailyQualityRow>(
       `SELECT ticker, market_date, payload_json, updated_at
        FROM daily_quality_stats
        WHERE ticker = $1 AND market_date = $2`,
-      [TICKER, marketDate],
+      [ticker, marketDate],
       "getDailyQualityStats",
     );
   }
@@ -519,7 +636,7 @@ export async function getDailyQualityStats(
      WHERE ticker = $1
      ORDER BY market_date DESC
      LIMIT $2`,
-    [TICKER, limit],
+    [ticker, limit],
     "getDailyQualityStats",
   );
 }
@@ -528,12 +645,13 @@ export async function getPredictionAccuracy(
   marketDate?: string,
   limit = 30,
 ): Promise<PredictionAccuracyRow[]> {
+  const ticker = await resolveActiveTicker();
   if (marketDate) {
     return queryOptional<PredictionAccuracyRow>(
       `SELECT ticker, market_date, payload_json, updated_at
        FROM prediction_accuracy_daily
        WHERE ticker = $1 AND market_date = $2`,
-      [TICKER, marketDate],
+      [ticker, marketDate],
       "getPredictionAccuracy",
     );
   }
@@ -543,37 +661,40 @@ export async function getPredictionAccuracy(
      WHERE ticker = $1
      ORDER BY market_date DESC
      LIMIT $2`,
-    [TICKER, limit],
+    [ticker, limit],
     "getPredictionAccuracy",
   );
 }
 
 export async function getTrades(limit = 100): Promise<TradeRow[]> {
+  const ticker = await resolveActiveTicker();
   return query<TradeRow>(
     `SELECT id, ticker, status, option_type, strike, qty, entry_ts, exit_ts,
             entry_spot, exit_spot, entry_premium, exit_premium,
             pnl_pct, pnl_usd, exit_reason, signal_type
      FROM trades WHERE ticker = $1 ORDER BY entry_ts DESC LIMIT $2`,
-    [TICKER, limit],
+    [ticker, limit],
     "getTrades",
   );
 }
 
 export async function getDecisions(limit = 100): Promise<DecisionRow[]> {
+  const ticker = await resolveActiveTicker();
   return query<DecisionRow>(
     `SELECT id, ts, ticker, action, payload_json, ai_verdict, ai_notes
      FROM decisions WHERE ticker = $1 ORDER BY ts DESC LIMIT $2`,
-    [TICKER, limit],
+    [ticker, limit],
     "getDecisions",
   );
 }
 
 export async function getLlmPredictions(limit = 100): Promise<LlmPredictionRow[]> {
+  const ticker = await resolveActiveTicker();
   return query<LlmPredictionRow>(
     `SELECT id, ticker, source, snapshot_ts, market_date, created_at,
             resolved_at, payload_json, actual_json, outcome_json
      FROM llm_predictions WHERE ticker = $1 ORDER BY created_at DESC LIMIT $2`,
-    [TICKER, limit],
+    [ticker, limit],
     "getLlmPredictions",
   );
 }
@@ -582,11 +703,12 @@ export async function getDailyInsights(
   marketDate?: string,
   limit = 30,
 ): Promise<DailyInsightRow[]> {
+  const ticker = await resolveActiveTicker();
   if (marketDate) {
     return query<DailyInsightRow>(
       `SELECT ticker, market_date, kind, payload_json, created_at, updated_at
        FROM daily_insights WHERE ticker = $1 AND market_date = $2 ORDER BY kind ASC`,
-      [TICKER, marketDate],
+      [ticker, marketDate],
       "getDailyInsights",
     );
   }
@@ -594,12 +716,13 @@ export async function getDailyInsights(
     `SELECT ticker, market_date, kind, payload_json, created_at, updated_at
      FROM daily_insights WHERE ticker = $1
      ORDER BY market_date DESC, kind ASC LIMIT $2`,
-    [TICKER, limit],
+    [ticker, limit],
     "getDailyInsights",
   );
 }
 
 export async function getTrainingSnapshots(limit = 50): Promise<TrainingSnapshotRow[]> {
+  const ticker = await resolveActiveTicker();
   return queryOptional<TrainingSnapshotRow>(
     `SELECT ticker, ts, market_date, spot, total_gex, regime,
             snapshot_at::text AS snapshot_at, quality_score, flip_confidence,
@@ -609,7 +732,7 @@ export async function getTrainingSnapshots(limit = 50): Promise<TrainingSnapshot
      WHERE ticker = $1
      ORDER BY ts DESC
      LIMIT $2`,
-    [TICKER, limit],
+    [ticker, limit],
     "getTrainingSnapshots",
   );
 }
@@ -627,13 +750,124 @@ export async function getProcessorState(): Promise<ProcessorStateRow[]> {
 export async function getSurfaceForSnapshot(
   ts: string,
 ): Promise<Record<string, unknown>[]> {
-  const rows = await query<{ surface_json: Record<string, unknown>[] | null }>(
+  const ticker = await resolveActiveTicker();
+  const rows = await queryOptional<{ surface_json: Record<string, unknown>[] | null }>(
     `SELECT surface_json FROM snapshots WHERE ticker = $1 AND ts = $2`,
-    [TICKER, ts],
+    [ticker, ts],
     "getSurfaceForSnapshot",
   );
   const surface = rows[0]?.surface_json;
   return Array.isArray(surface) ? surface : [];
+}
+
+export async function getDbDiagnostics(): Promise<DbDiagnostics> {
+  const configured = configuredTicker();
+  const base: DbDiagnostics = {
+    postgres: false,
+    database_host: maskDatabaseHost(process.env.DATABASE_URL),
+    configured_ticker: configured,
+    active_ticker: configured,
+    snapshot_count: 0,
+    strike_count: 0,
+    feature_count: 0,
+    tickers: [],
+    latest_ts: null,
+    latest_market_date: null,
+    tables_present: [],
+    schema_issues: [],
+    query_error: null,
+  };
+
+  if (!process.env.DATABASE_URL) {
+    base.schema_issues = ["DATABASE_URL is not set on this service"];
+    return base;
+  }
+
+  try {
+    base.postgres = await checkDbConnection();
+    if (!base.postgres) {
+      base.schema_issues = ["Database connection failed — verify DATABASE_URL points to the new Postgres"];
+      return base;
+    }
+
+    const tableRows = await queryOptional<{ name: string }>(
+      `SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public'
+       UNION ALL
+       SELECT viewname AS name FROM pg_views WHERE schemaname = 'public'
+       UNION ALL
+       SELECT matviewname AS name FROM pg_matviews WHERE schemaname = 'public'`,
+      [],
+      "getDbDiagnostics.tables",
+    );
+    base.tables_present = tableRows.map((r) => r.name);
+
+    const missing = PROCESSOR_TABLES.filter((t) => !base.tables_present.includes(t));
+    if (!base.tables_present.includes("snapshots")) {
+      base.schema_issues.push(
+        "snapshots table missing — run GEX processor schema init on this database",
+      );
+    } else if (missing.length) {
+      base.schema_issues.push(`Optional schema not yet created: ${missing.join(", ")}`);
+    }
+
+    base.tickers = (
+      await queryOptional<{ ticker: string; count: string }>(
+        `SELECT ticker, COUNT(*)::text AS count
+         FROM snapshots
+         GROUP BY ticker
+         ORDER BY count DESC`,
+        [],
+        "getDbDiagnostics.tickers",
+      )
+    ).map((r) => ({ ticker: r.ticker, count: Number(r.count) }));
+
+    base.active_ticker = await resolveActiveTicker();
+    base.snapshot_count = Number(
+      (
+        await queryOptional<{ cnt: string }>(
+          `SELECT COUNT(*)::text AS cnt FROM snapshots WHERE ticker = $1`,
+          [base.active_ticker],
+          "getDbDiagnostics.snapshotCount",
+        )
+      )[0]?.cnt ?? 0,
+    );
+    base.strike_count = Number(
+      (
+        await queryOptional<{ cnt: string }>(
+          `SELECT COUNT(*)::text AS cnt FROM snapshot_strikes WHERE ticker = $1`,
+          [base.active_ticker],
+          "getDbDiagnostics.strikeCount",
+        )
+      )[0]?.cnt ?? 0,
+    );
+    base.feature_count = Number(
+      (
+        await queryOptional<{ cnt: string }>(
+          `SELECT COUNT(*)::text AS cnt FROM snapshot_features WHERE ticker = $1`,
+          [base.active_ticker],
+          "getDbDiagnostics.featureCount",
+        )
+      )[0]?.cnt ?? 0,
+    );
+
+    const latest = await selectLatestSnapshot(base.active_ticker);
+    base.latest_ts = latest?.ts ?? null;
+    base.latest_market_date = latest?.market_date ?? null;
+
+    if (base.snapshot_count === 0 && base.tickers.length === 0) {
+      base.schema_issues.push(
+        "Postgres is connected but empty — set the processor DATABASE_URL to this database and run backfill (GEX_STARTUP_BACKFILL=1)",
+      );
+    } else if (base.snapshot_count === 0 && base.tickers.length > 0) {
+      base.schema_issues.push(
+        `No snapshots for ticker "${configured}". Found: ${base.tickers.map((t) => `${t.ticker} (${t.count})`).join(", ")}. Set GEX_TICKER if needed.`,
+      );
+    }
+  } catch (error) {
+    base.query_error = error instanceof Error ? error.message : "Diagnostic query failed";
+  }
+
+  return base;
 }
 
 export async function checkDbConnection(): Promise<boolean> {

@@ -1,4 +1,4 @@
-export const TICKER = "SPX";
+export { DEFAULT_TICKER as TICKER } from "./ticker";
 
 export interface SummaryJson {
   export_schema_version?: number;

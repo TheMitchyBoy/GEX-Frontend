@@ -41,6 +41,7 @@ Walls and gamma flip prefer `snapshot_features` over client-side derivation.
 
 ```bash
 DATABASE_URL=postgresql://...
+GEX_TICKER=SPX
 NODE_ENV=production
 PROCESSOR_HEALTH_URL=
 NEXT_PUBLIC_PROCESSOR_HEALTH_URL=
@@ -54,6 +55,7 @@ BASIC_AUTH_PASSWORD=
 | Endpoint | Description |
 |----------|-------------|
 | `GET /api/health` | Liveness + quality_score, diagnostic_status |
+| `GET /api/db-info` | Database diagnostics (host, counts, schema issues) |
 | `GET /api/ready` | Readiness (503 if DB down) |
 | `GET /api/snapshots/latest` | Latest with features + walls |
 | `GET /api/snapshots/:ts/features` | `snapshot_features` row |
@@ -69,8 +71,16 @@ Legacy databases without new tables fall back to `snapshots` + `snapshot_strikes
 ## Railway
 
 1. Same project as processor + Postgres
-2. `DATABASE_URL=${{Postgres.DATABASE_URL}}`
-3. Healthcheck: `/api/health`
+2. `DATABASE_URL=${{Postgres.DATABASE_URL}}` — must reference the **same** Postgres service the processor writes to
+3. Optional `GEX_TICKER=SPX` if your processor uses a different symbol
+4. Healthcheck: `/api/health`
+
+### No data after switching databases?
+
+1. Open `/api/db-info` — shows host, row counts, tickers present, and specific issues
+2. Confirm the dashboard `DATABASE_URL` matches the processor Postgres (not an old empty instance)
+3. Run processor schema init: `python3 scripts/init_postgres_schema.py` in the GEX repo
+4. Backfill: set `GEX_STARTUP_BACKFILL=1` on the processor or run `scripts/backfill_postgres_history.py`
 
 ## Local dev
 

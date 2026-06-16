@@ -4,6 +4,7 @@ export {
   gammaFlipFrom,
   getDailyInsights,
   getDailyQualityStats,
+  getDbDiagnostics,
   getDecisions,
   getEnrichedSnapshot,
   getFreshness,

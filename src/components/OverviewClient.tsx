@@ -7,7 +7,7 @@ import { MacroBadges } from "@/components/MacroBadges";
 import { QualityPanel } from "@/components/QualityPanel";
 import { MultiDayChart } from "@/components/SpotTimeline";
 import { ChartSkeleton, LoadingSkeleton } from "@/components/LoadingSkeleton";
-import { EmptyState } from "@/components/EmptyState";
+import { DbEmptyState } from "@/components/DbEmptyState";
 import { TOOLTIPS } from "@/lib/glossary";
 import { formatNumber, formatTsLabel } from "@/lib/time";
 import type { SnapshotDiagnostics, SnapshotFeatures, SummaryJson, Walls } from "@/lib/types";
@@ -104,12 +104,7 @@ export function OverviewClient({
   }
 
   if (!data?.ts) {
-    return (
-      <EmptyState
-        title="No snapshots yet"
-        message="The database has no SPX snapshots. Ensure the GEX processor is running and writing to Postgres."
-      />
-    );
+    return <DbEmptyState />;
   }
 
   const summary = data.summary_json ?? {};
