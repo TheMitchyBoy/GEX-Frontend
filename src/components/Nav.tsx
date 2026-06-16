@@ -29,6 +29,7 @@ const sections = [
   {
     label: "Journal",
     links: [
+      { href: "/quality", label: "Quality" },
       { href: "/trades", label: "Trades" },
       { href: "/decisions", label: "Decisions" },
       { href: "/llm-predictions", label: "LLM" },

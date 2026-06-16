@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { formatGexValue, formatSpot, StatCard } from "@/components/StatCard";
 import { FlowPanel } from "@/components/FlowPanel";
 import { MacroBadges } from "@/components/MacroBadges";
+import { QualityPanel } from "@/components/QualityPanel";
 import { MultiDayChart } from "@/components/SpotTimeline";
 import { ChartSkeleton, LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { TOOLTIPS } from "@/lib/glossary";
 import { formatNumber, formatTsLabel } from "@/lib/time";
-import type { SummaryJson, Walls } from "@/lib/types";
+import type { SnapshotDiagnostics, SnapshotFeatures, SummaryJson, Walls } from "@/lib/types";
 
 interface LatestPayload {
   ts?: string;
@@ -34,6 +35,13 @@ interface LatestPayload {
   is_fomc_week?: number;
   is_cpi_day?: number;
   is_nfp_day?: number;
+  features?: SnapshotFeatures | null;
+  diagnostics?: SnapshotDiagnostics | null;
+  quality_score?: number | null;
+  flip_confidence?: string | null;
+  regime_consistent?: boolean | null;
+  data_lag_sec?: number | null;
+  diagnostic_status?: string | null;
 }
 
 interface OverviewClientProps {
@@ -118,6 +126,16 @@ export function OverviewClient({
           indexed {data.indexed_at ?? "—"}
           {freshnessMin != null ? ` · ${formatNumber(freshnessMin, 1)}m ago` : ""}
         </span>
+        {data.quality_score != null ? (
+          <span className="meta">
+            quality {formatNumber(data.quality_score * 100, 0)}%
+          </span>
+        ) : null}
+        {data.diagnostic_status ? (
+          <span className={`badge diag-${data.diagnostic_status.replace(/_/g, "-")}`}>
+            {data.diagnostic_status}
+          </span>
+        ) : null}
         {lastRefresh ? (
           <span className="meta">↻ {lastRefresh.toLocaleTimeString()}</span>
         ) : null}
@@ -169,6 +187,16 @@ export function OverviewClient({
 
       <div className="grid grid-2" style={{ marginBottom: "1rem" }}>
         <FlowPanel summary={summary} data={data} />
+        <QualityPanel
+          features={data.features}
+          diagnostics={data.diagnostics}
+          qualityScore={data.quality_score}
+          flipConfidence={data.flip_confidence}
+          dataLagSec={data.data_lag_sec}
+        />
+      </div>
+
+      <div className="grid grid-2" style={{ marginBottom: "1rem" }}>
         <div className="card">
           <h3>Glossary</h3>
           <dl className="glossary">
@@ -178,6 +206,21 @@ export function OverviewClient({
             <dd>Positive total GEX — mean-reversion bias</dd>
             <dt>SHORT gamma</dt>
             <dd>Negative total GEX — momentum bias</dd>
+          </dl>
+        </div>
+        <div className="card">
+          <h3>ML Features</h3>
+          <dl className="glossary metric-list">
+            <dt>Delta GEX</dt>
+            <dd>{formatNumber(data.features?.delta_gex as number | undefined, 4)}</dd>
+            <dt>Spot return</dt>
+            <dd>{formatNumber(data.features?.spot_return as number | undefined, 4)}</dd>
+            <dt>GEX concentration</dt>
+            <dd>{formatNumber(data.features?.gex_concentration as number | undefined, 3)}</dd>
+            <dt>Zero-DTE ratio</dt>
+            <dd>{formatNumber(data.features?.zero_dte_ratio as number | undefined, 3)}</dd>
+            <dt>Strike count</dt>
+            <dd>{data.features?.strike_count ?? "—"}</dd>
           </dl>
         </div>
       </div>

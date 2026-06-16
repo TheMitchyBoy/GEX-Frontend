@@ -43,8 +43,76 @@ export interface Snapshot {
   regime: string | null;
   summary_json: SummaryJson | null;
   expiration_json: Record<string, number> | null;
+  surface_json?: Record<string, unknown>[] | null;
   greek_exposure_json: GreekExposureRow[] | null;
   indexed_at: string | null;
+  snapshot_at?: string | null;
+  prior_ts?: string | null;
+}
+
+export interface SnapshotFeatures {
+  ticker: string;
+  ts: string;
+  prior_ts: string | null;
+  snapshot_at: string | null;
+  gamma_flip: number | null;
+  call_wall: number | null;
+  put_wall: number | null;
+  pos_gamma_peak_strike: number | null;
+  flip_distance_pct: number | null;
+  wall_spread: number | null;
+  gex_concentration: number | null;
+  near_term_ratio: number | null;
+  zero_dte_ratio: number | null;
+  term_curvature: number | null;
+  expiration_count: number | null;
+  front_term_ratio: number | null;
+  back_term_ratio: number | null;
+  delta_gex: number | null;
+  delta_spot: number | null;
+  spot_return: number | null;
+  regime_changed: boolean | null;
+  strike_count: number | null;
+  quality_score: number | null;
+  flip_confidence: string | null;
+  regime_consistent: boolean | null;
+  spot_source: string | null;
+  spot_disagreement_pct: number | null;
+  strike_profile_confidence: string | null;
+  data_lag_sec: number | null;
+}
+
+export interface SnapshotDiagnostics {
+  ticker: string;
+  ts: string;
+  status: string;
+  validation_json: Record<string, unknown> | null;
+  uw_fetch_ms: number | null;
+  postgres_write_ms: number | null;
+  indexed_at: string | null;
+  quality_score: number | null;
+  data_lag_sec: number | null;
+}
+
+export interface DailyQualityRow {
+  ticker: string;
+  market_date: string;
+  payload_json: Record<string, unknown>;
+  updated_at: string;
+}
+
+export interface PredictionAccuracyRow {
+  ticker: string;
+  market_date: string;
+  payload_json: Record<string, unknown>;
+  updated_at: string;
+}
+
+export interface SnapshotEnriched extends Snapshot {
+  features: SnapshotFeatures | null;
+  diagnostics: SnapshotDiagnostics | null;
+  walls: Walls;
+  gamma_flip: number | null;
 }
 
 export interface SnapshotTimelineRow {
@@ -53,6 +121,8 @@ export interface SnapshotTimelineRow {
   total_gex: number | null;
   regime: string | null;
   gamma_flip: string | null;
+  quality_score: number | null;
+  diagnostic_status: string | null;
 }
 
 export interface SnapshotBrief {
@@ -88,7 +158,11 @@ export interface GreekExposureRow {
 export interface FreshnessInfo {
   ts: string;
   indexed_at: string | null;
+  snapshot_at: string | null;
   age_minutes: number | null;
+  data_lag_sec: number | null;
+  diagnostic_status: string | null;
+  quality_score: number | null;
 }
 
 export interface Walls {
@@ -111,6 +185,10 @@ export interface WallDriftRow {
   gamma_flip: number | null;
   call_wall: number | null;
   put_wall: number | null;
+  quality_score: number | null;
+  flip_confidence: string | null;
+  regime_consistent: boolean | null;
+  diagnostic_status: string | null;
 }
 
 export interface HeatmapCell {

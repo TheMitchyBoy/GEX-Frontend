@@ -717,6 +717,36 @@ table.data-table tr.clickable:hover {
   .skeleton-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
+.quality-high { color: var(--long); }
+.quality-mid { color: var(--call-wall); }
+.quality-low { color: var(--short); }
+
+.badge.diag-ok,
+.badge.diag-ok-with-warnings {
+  color: var(--long);
+  border-color: rgba(52, 211, 153, 0.35);
+  background: var(--long-dim);
+}
+
+.badge.diag-stale,
+.badge.diag-degraded,
+.badge.diag-rejected {
+  color: var(--short);
+  border-color: rgba(248, 113, 113, 0.35);
+  background: var(--short-dim);
+}
+
+.badge.diag-skipped-duplicate,
+.badge.diag-warming {
+  color: var(--call-wall);
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.quality-panel h3 {
+  margin-bottom: 0.75rem;
+}
+
 code {
   font-family: var(--font-mono);
   font-size: 0.85em;

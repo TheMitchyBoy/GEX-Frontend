@@ -10,8 +10,7 @@ export async function GET(request: NextRequest) {
     if (!marketDate) {
       return NextResponse.json({ error: "market_date required" }, { status: 400 });
     }
-    const pctBand = Number(request.nextUrl.searchParams.get("pct_band") ?? "0.03");
-    const cells = await getHeatmapForDate(marketDate, pctBand);
+    const cells = await getHeatmapForDate(marketDate);
     return cachedHistoricalJson({ market_date: marketDate, cells, count: cells.length });
   } catch (error) {
     return NextResponse.json(

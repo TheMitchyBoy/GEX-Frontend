@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import {
   checkDbConnection,
-  deriveWalls,
   getFreshness,
   getLatestSnapshot,
+  getSnapshotDiagnostics,
+  getSnapshotFeatures,
   getStrikesForSnapshot,
+  wallsFromFeatures,
 } from "@/db/queries";
 import type { Walls } from "@/lib/types";
 
@@ -28,8 +30,12 @@ export async function GET() {
       ]);
 
       if (snapshot?.ts) {
-        const strikes = await getStrikesForSnapshot(snapshot.ts);
-        walls = await deriveWalls(strikes);
+        const [features, strikes, diagnostics] = await Promise.all([
+          getSnapshotFeatures(snapshot.ts),
+          getStrikesForSnapshot(snapshot.ts, "auto"),
+          getSnapshotDiagnostics(snapshot.ts),
+        ]);
+        walls = wallsFromFeatures(features, strikes);
       }
     }
   } catch (error) {
@@ -69,6 +75,10 @@ export async function GET() {
     latest_ts: snapshot?.ts ?? null,
     age_minutes: ageMinutes,
     indexed_at: freshness?.indexed_at ?? null,
+    snapshot_at: freshness?.snapshot_at ?? null,
+    data_lag_sec: freshness?.data_lag_sec ?? null,
+    quality_score: freshness?.quality_score ?? null,
+    diagnostic_status: freshness?.diagnostic_status ?? null,
     walls,
     processor: processorHealth,
     uptime_seconds: Math.round(process.uptime()),

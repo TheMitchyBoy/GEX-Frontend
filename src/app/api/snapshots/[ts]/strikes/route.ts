@@ -1,22 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deriveWalls, getStrikesForSnapshot } from "@/db/queries";
+import {
+  getSnapshotFeatures,
+  getStrikesForSnapshot,
+  wallsFromFeatures,
+} from "@/db/queries";
 import { cachedHistoricalJson } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ ts: string }> };
 
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { ts } = await context.params;
     const decodedTs = decodeURIComponent(ts);
-    const strikes = await getStrikesForSnapshot(decodedTs);
-    const walls = await deriveWalls(strikes);
+    const source = request.nextUrl.searchParams.get("source") as "auto" | "atm" | "full" | null;
+
+    const [strikes, features] = await Promise.all([
+      getStrikesForSnapshot(decodedTs, source ?? "auto"),
+      getSnapshotFeatures(decodedTs),
+    ]);
+    const walls = wallsFromFeatures(features, strikes);
 
     return cachedHistoricalJson({
       ts: decodedTs,
       strikes,
       walls,
+      features,
+      strike_source: source ?? "auto",
       count: strikes.length,
     });
   } catch (error) {

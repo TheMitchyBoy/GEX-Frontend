@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { deriveWalls, getLatestSnapshot, getStrikesForSnapshot } from "@/db/queries";
+import {
+  gammaFlipFrom,
+  getLatestSnapshot,
+  getSnapshotFeatures,
+  getStrikesForSnapshot,
+  wallsFromFeatures,
+} from "@/db/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -10,14 +16,25 @@ export async function GET() {
       return NextResponse.json({ error: "No snapshots found" }, { status: 404 });
     }
 
-    const strikes = await getStrikesForSnapshot(snapshot.ts);
-    const walls = await deriveWalls(strikes);
+    const [features, strikes] = await Promise.all([
+      getSnapshotFeatures(snapshot.ts),
+      getStrikesForSnapshot(snapshot.ts, "auto"),
+    ]);
+    const walls = wallsFromFeatures(features, strikes);
     const summary = snapshot.summary_json ?? {};
 
     return NextResponse.json({
       ...snapshot,
-      gamma_flip: summary.gamma_flip ?? null,
+      features,
+      gamma_flip: gammaFlipFrom(features, summary),
       walls,
+      quality_score: features?.quality_score ?? null,
+      flip_confidence: features?.flip_confidence ?? null,
+      regime_consistent: features?.regime_consistent ?? null,
+      data_lag_sec: features?.data_lag_sec ?? null,
+      strike_profile_confidence: features?.strike_profile_confidence ?? null,
+      spot_source: features?.spot_source ?? null,
+      spot_disagreement_pct: features?.spot_disagreement_pct ?? null,
       vix_level: summary.vix_level ?? null,
       vix9d_level: summary.vix9d_level ?? null,
       iv_rank: summary.iv_rank ?? null,

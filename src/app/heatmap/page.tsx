@@ -41,7 +41,7 @@ function HeatmapContent() {
       <div className="card">
         <h2>GEX Heatmap — {marketDate}</h2>
         <p className="glossary" style={{ marginBottom: "0.75rem" }}>
-          Strike × time ladder (±3% of spot). Green = positive GEX, red = negative.
+          Strike × time from <code>snapshot_strikes_atm</code> (processor ATM subset).
         </p>
         {loading ? <ChartSkeleton /> : cells.length ? (
           <GexHeatmap cells={cells} />

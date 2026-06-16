@@ -49,6 +49,8 @@ function HistoryContent() {
                 <th>Total GEX</th>
                 <th>Regime</th>
                 <th>Gamma Flip</th>
+                <th>Quality</th>
+                <th>Status</th>
                 <th>Links</th>
               </tr>
             </thead>
@@ -60,6 +62,8 @@ function HistoryContent() {
                   <td>{formatGex(s.total_gex)}</td>
                   <td>{s.regime ?? "—"}</td>
                   <td>{s.gamma_flip ?? "—"}</td>
+                  <td>{s.quality_score != null ? formatNumber(s.quality_score * 100, 0) + "%" : "—"}</td>
+                  <td>{s.diagnostic_status ?? "—"}</td>
                   <td>
                     <Link href={buildSnapshotHref("/profile", { marketDate, ts: s.ts })} className="text-link">
                       Profile

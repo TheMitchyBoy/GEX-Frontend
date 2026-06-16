@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  deriveWalls,
-  getGreeksPaginated,
-  getSnapshotSummary,
-  getStrikesForSnapshot,
-} from "@/db/queries";
+import { getEnrichedSnapshot, getGreeksPaginated } from "@/db/queries";
 import { cachedHistoricalJson } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
@@ -15,15 +10,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { ts } = await context.params;
     const decodedTs = decodeURIComponent(ts);
-    const snapshot = await getSnapshotSummary(decodedTs);
-
-    if (!snapshot) {
-      return NextResponse.json({ error: "Snapshot not found" }, { status: 404 });
-    }
-
-    const strikes = await getStrikesForSnapshot(decodedTs);
-    const walls = await deriveWalls(strikes);
-    const summary = snapshot.summary_json ?? {};
 
     const greeksOnly = request.nextUrl.searchParams.get("greeks_only") === "1";
     if (greeksOnly) {
@@ -33,12 +19,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return cachedHistoricalJson({ ts: decodedTs, ...greeks });
     }
 
+    const enriched = await getEnrichedSnapshot(decodedTs);
+    if (!enriched) {
+      return NextResponse.json({ error: "Snapshot not found" }, { status: 404 });
+    }
+
+    const summary = enriched.summary_json ?? {};
     return cachedHistoricalJson({
-      ...snapshot,
-      gamma_flip: summary.gamma_flip ?? null,
-      walls,
-      expiration: snapshot.expiration_json ?? {},
-      greeks: snapshot.greek_exposure_json ?? [],
+      ...enriched,
+      expiration: enriched.expiration_json ?? {},
+      greeks: enriched.greek_exposure_json ?? [],
+      gamma_flip: enriched.gamma_flip,
+      summary_gamma_flip: summary.gamma_flip ?? null,
     });
   } catch (error) {
     return NextResponse.json(

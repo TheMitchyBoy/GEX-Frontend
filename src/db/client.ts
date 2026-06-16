@@ -1,8 +1,11 @@
 export {
   checkDbConnection,
   deriveWalls,
+  gammaFlipFrom,
   getDailyInsights,
+  getDailyQualityStats,
   getDecisions,
+  getEnrichedSnapshot,
   getFreshness,
   getGreeksPaginated,
   getHeatmapForDate,
@@ -10,6 +13,9 @@ export {
   getLlmPredictions,
   getMarketDates,
   getMultiDaySeries,
+  getPredictionAccuracy,
+  getSnapshotDiagnostics,
+  getSnapshotFeatures,
   getSnapshotSummary,
   getSnapshotsInRange,
   getSpotStrikesForSnapshot,
@@ -17,4 +23,5 @@ export {
   getTimelineForDate,
   getTrades,
   getWallDriftForDate,
+  wallsFromFeatures,
 } from "./queries";

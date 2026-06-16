@@ -68,7 +68,7 @@ function ProfileContent() {
 export default function ProfilePage() {
   return (
     <PageShell>
-      <PageHeader title="GEX Profile" description="Per-strike gamma exposure with call/put walls (±3% of spot)." />
+      <PageHeader title="GEX Profile" description="Per-strike gamma from snapshot_strikes_atm (±3% of spot, precomputed)." />
       <ProfileContent />
     </PageShell>
   );
